@@ -5,6 +5,12 @@
 [PLaMo](https://plamo.preferredai.jp/) という国産 LLM をバックエンドとするJuliaのマニュアル翻訳パッケージを開発しました．
 このパッケージは CLI ツール [plamo-translate-cli](https://github.com/pfnet/plamo-translate-cli) をラップすることで翻訳機能を実現しています．
 
+## Description (English)
+
+(Built with PLaMo)
+
+We have developed a manual translation package for Julia that utilizes [PLaMo](https://plamo.preferredai.jp/), a domestically developed LLM, as the backend.
+This package implements translation functionality by wrapping the CLI tool [plamo-translate-cli](https://github.com/pfnet/plamo-translate-cli).
 
 ## TL; DR
 
