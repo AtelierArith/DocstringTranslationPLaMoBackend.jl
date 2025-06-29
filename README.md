@@ -1,5 +1,11 @@
 # DocstringTranslationPLaMoBackend.jl
 
+## Description (Japanese)
+
+[PLaMo](https://plamo.preferredai.jp/) という国産 LLM をバックエンドとするJuliaのマニュアル翻訳パッケージを開発しました．
+このパッケージは CLI ツール [plamo-translate-cli](https://github.com/pfnet/plamo-translate-cli) をラップすることで翻訳機能を実現しています．
+
+
 ## TL; DR
 
 ```julia
@@ -15,5 +21,5 @@ git clone https://github.com/AtelierArith/DocstringTranslationPLaMoBackend.jl.gi
 cd DocstringTranslationPLaMoBackend.jl
 julia --project -e 'using Pkg; Pkg.instantiate()'
 julia --project install_model.jl
-julia --project -e 'using DocstringTranslationPLaMoBackend; @switchlang! :Japanese; @doc sin'
+julia --project -e 'using DocstringTranslationPLaMoBackend; @switchlang! :Japanese; display(@doc sin)'
 ```
