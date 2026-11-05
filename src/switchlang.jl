@@ -1,106 +1,83 @@
 function _switchlang!(lang::Union{String,Symbol})
-    DEFAULT_LANG[] = String(lang)
+    DEFAULT_LANG[] = language_code(lang)
 end
 
-"""
-	@switchlang!(lang)
-
-Switch the target language for docstring translation and modify the documentation system to automatically translate docstrings.
-
-# Arguments
-- `lang`: The target language code (e.g., "ja", "en") to translate docstrings into.
-
-# Details
-This macro performs the following operations:
-1. Sets the target language for translation
-2. Overrides `Docs.parsedoc` to insert translation engine for individual docstrings
-3. Overrides `Documenter.Page` constructor to enable translation of entire documentation pages
-
-# Example
-```julia
-@switchlang! "ja"  # Switch to Japanese translation
-```
-"""
-macro switchlang!(lang)
-    @eval function Docs.parsedoc(d::DocStr)
-        if d.object === nothing
-            md = Docs.formatdoc(d)
-            md.meta[:module] = d.data[:module]
-            md.meta[:path] = d.data[:path]
-            begin # hack
-                md_hash_original = hashmd(md)
-                cache_original(md)
-                translated_md = if istranslated(md)
-                    translated_md = load_translation(md)
-                    translated_md.meta[:module] = d.data[:module]
-                    translated_md.meta[:path] = d.data[:path]
-                    translated_md
-                else
-                    translated_md = translate_docstring_with_plamo(md)
-                    translated_md.meta[:module] = d.data[:module]
-                    translated_md.meta[:path] = d.data[:path]
-                    cache_translation(md_hash_original, translated_md)
-                    # set meta again
-                    translated_md
-                end
-                md = translated_md
-            end # hack
-            d.object = md
-        end
-        d.object
+# Preserve the original document and its metadata. Translation must succeed
+# before a language-specific cache entry is written.
+function cached_translation(md::Markdown.MD; translator = translate_docstring_with_plamo)
+    original_hash = hashmd(md)
+    cache_original(md)
+    translated = if istranslated(md)
+        load_translation(md)
+    else
+        result = translator(copy_markdown(md))
+        merge!(result.meta, md.meta)
+        cache_translation(original_hash, result)
+        result
     end
+    merge!(translated.meta, md.meta)
+    translated
+end
 
-    # Overrides Page constructor to hack Documenter to translate docstrings
+function translated_docstr(d::DocStr)
+    original = get!(d.data, :plamo_original_md) do
+        md = Docs.formatdoc(d)
+        md.meta[:module] = get(d.data, :module, Main)
+        md.meta[:path] = get(d.data, :path, "")
+        md
+    end
+    key = (default_lang(), TRANSLATION_CACHE_DIR[])
+    if get(d.data, :plamo_translation_key, nothing) != key
+        translated = cached_translation(original)
+        d.object = translated
+        d.data[:plamo_translation_key] = key
+    end
+    d.object
+end
+
+function translated_page(
+    source::AbstractString,
+    build::AbstractString,
+    workdir::AbstractString,
+)
+    mdpage = Markdown.parse(replace(read(source, String), '\r' => ""))
+    mdpage.meta[:path] = String(source)
+    mdpage = cached_translation(mdpage; translator = translate_md!)
+    mdast = convert(Documenter.MarkdownAST.Node, mdpage)
+    Documenter.Page(source, build, workdir, mdpage.content, Documenter.Globals(), mdast)
+end
+
+const TRANSLATION_HOOKS_INSTALLED = Ref(false)
+function install_translation_hooks!()
+    TRANSLATION_HOOKS_INSTALLED[] && return
+    @eval function Docs.parsedoc(d::DocStr)
+        translated_docstr(d)
+    end
     @eval function Documenter.Page(
         source::AbstractString,
         build::AbstractString,
         workdir::AbstractString,
     )
-        # The Markdown standard library parser is sensitive to line endings:
-        #   https://github.com/JuliaLang/julia/issues/29344
-        # This can lead to different AST and therefore differently rendered docs, depending on
-        # what platform the docs are being built (e.g. when Git checks out LF files with
-        # CRFL line endings on Windows). To make sure that the docs are always built consistently,
-        # we'll normalize the line endings when parsing Markdown files by removing all CR characters.
-
-        mdsrc = replace(read(source, String), '\r' => "")
-        mdpage = Markdown.parse(mdsrc)
-        begin # hack
-            target_package = DOCUMENTER_TARGET_PACKAGE[][:name]
-            mdpage.meta[:path] = joinpath(target_package, first(splitext(source)))
-            cache_original(mdpage)
-            @debug "Translating ..." mdpage
-            mdhash_original = hashmd(mdpage)
-            if !istranslated(mdpage)
-                # Update mdpage object
-                mdpage = translate_md!(mdpage)
-                cache_translation(mdhash_original, mdpage)
-            else
-                mdpage = load_translation(mdpage)
-            end
-            @debug "Translated" mdpage
-        end # hack
-        mdast = try
-            convert(Documenter.MarkdownAST.Node, mdpage)
-        catch err
-            @error """
-            MarkdownAST conversion error on $(source).
-            This is a bug — please report this on the Documenter issue tracker
-            """
-            rethrow(err)
-        end
-        return Documenter.Page(
-            source,
-            build,
-            workdir,
-            mdpage.content,
-            Documenter.Globals(),
-            mdast,
-        )
+        translated_page(source, build, workdir)
     end
+    TRANSLATION_HOOKS_INSTALLED[] = true
+    nothing
+end
 
+"""
+    @switchlang! lang
+
+Enable automatic docstring/Documenter translation and select the output language.
+Accepts codes (`:ja`, `"en"`) and the existing names (`:Japanese`, `:English`).
+This overrides `Docs.parsedoc` and `Documenter.Page` for the current Julia process.
+Translations are cached per language; changing languages reuses the original
+text rather than retranslating an already translated docstring.
+"""
+macro switchlang!(lang)
+    # Install at macro expansion time so the calling expression sees the methods
+    # in its world age, matching the original interactive API.
+    install_translation_hooks!()
     quote
-        local _lang = $(esc(lang))
-        _switchlang!(_lang)
+        _switchlang!($(esc(lang)))
     end
 end

@@ -57,3 +57,7 @@ agent_key*
 .CondaPkg
 
 Manifest.toml
+
+# Local development logs and model copies (production weights live in Scratch).
+/build/
+/models/

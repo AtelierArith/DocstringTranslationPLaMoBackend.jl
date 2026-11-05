@@ -1,23 +1,65 @@
-function default_lang()
-    return DEFAULT_LANG[]
+default_lang() = DEFAULT_LANG[]
+
+const LANGUAGE_CODES = Dict(
+    "japanese"=>"ja",
+    "english"=>"en",
+    "korean"=>"ko",
+    "chinese"=>"zh-hans",
+    "german"=>"de",
+    "french"=>"fr",
+    "spanish"=>"es",
+    "italian"=>"it",
+    "portuguese"=>"pt",
+    "russian"=>"ru",
+    "arabic"=>"ar",
+    "vietnamese"=>"vi",
+    "thai"=>"th",
+    "indonesian"=>"id",
+)
+
+function language_code(lang::Union{AbstractString,Symbol})
+    key = replace(lowercase(strip(String(lang))), '_'=>'-')
+    code = get(LANGUAGE_CODES, key, key)
+    (code == "ja(easy)" || occursin(r"^[a-z]{2,3}(-[a-z]{4})?$", code)) ||
+        throw(ArgumentError("Use a language code such as ja/en, or Japanese/English."))
+    code
 end
 
-function translate_docstring_with_plamo(doc::Union{Markdown.MD,AbstractString})
-    translate_with_plamo(doc)
+function translation_request(doc, lang, max_tokens)
+    request = PLaMo.TranslationRequest(
+        text = string(doc),
+        target_lang = language_code(lang),
+        max_tokens = max_tokens,
+    )
+    PLaMo.prompt(request)
+    request
 end
 
-function translate_documenter_md_with_plamo(doc::Union{Markdown.MD,AbstractString})
-    translate_with_plamo(doc)
+function translated_markdown(result::PLaMo.Translation)
+    result.finish_reason == :stop || throw(
+        ErrorException(
+            "PLaMo translation did not complete ($(result.finish_reason)); increase max_tokens/context_size with configure_plamo!().",
+        ),
+    )
+    isempty(strip(result.text)) &&
+        throw(ErrorException("PLaMo returned an empty translation."))
+    Markdown.parse(result.text)
 end
 
 function translate_with_plamo(
     doc::Union{Markdown.MD,AbstractString};
-    lang::String = default_lang(),
+    lang::Union{AbstractString,Symbol} = default_lang(),
 )
-    content = CondaPkg.withenv() do
-        read(`plamo-translate --to $(lang) --input $(doc)`, String)
+    lock(MODEL_LOCK) do
+        request = translation_request(doc, lang, MODEL_OPTIONS[].max_tokens)
+        translated_markdown(PLaMo.translate(native_translator(), request))
     end
-    return Markdown.parse(content)
+end
+
+translate_documenter_md_with_plamo(doc::Union{Markdown.MD,AbstractString}) =
+    translate_with_plamo(doc)
+function translate_docstring_with_plamo(doc::Union{Markdown.MD,AbstractString})
+    translate_md!(doc isa Markdown.MD ? copy_markdown(doc) : Markdown.parse(doc))
 end
 
 function _create_hex(l::Markdown.Link)
@@ -93,7 +135,7 @@ end
 """
     translate_md!(md::Markdown.MD)
 
-Translate a Markdown document in-place using OpenAI translation.
+Translate a Markdown document in-place using native PLaMo.jl inference.
 
 # Arguments
 - `md::Markdown.MD`: The Markdown document to translate

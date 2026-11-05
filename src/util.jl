@@ -1,3 +1,7 @@
+# Copy the syntax tree, while retaining module references in Markdown metadata.
+# Julia cannot deepcopy Module objects stored under :module.
+copy_markdown(md::Markdown.MD) = Markdown.MD(deepcopy(md.content), copy(md.meta))
+
 function hashmd(md::Markdown.MD)::String
     return bytes2hex(sha256(string(md)))
 end
