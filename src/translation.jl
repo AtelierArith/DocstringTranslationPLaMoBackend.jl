@@ -66,7 +66,8 @@ function _create_hex(l::Markdown.Link)
     (bytes2hex(codeunits(join(l.text))) * "_" * bytes2hex(codeunits(l.url)))
 end
 
-function _translate!(p::Markdown.Paragraph)
+function _translate!(p::Markdown.Paragraph; translator = translate_documenter_md_with_plamo)
+    isempty(strip(string(Markdown.MD(p)))) && return nothing
     hex2link = Dict()
     link2hex = Dict()
     content = map(p.content) do c
@@ -82,7 +83,7 @@ function _translate!(p::Markdown.Paragraph)
     end
     p_orig = deepcopy(p)
     p.content = content
-    result = translate_documenter_md_with_plamo(Markdown.MD(p))
+    result = translator(Markdown.MD(p))
     try
         translated_content = map(result[1].content) do c
             if c isa Markdown.Code
@@ -114,6 +115,35 @@ function _translate!(p::Markdown.Paragraph)
     end
     nothing
 end
+
+function _translate!(
+    header::Markdown.Header;
+    translator = translate_documenter_md_with_plamo,
+)
+    content = header.text isa AbstractVector ? copy(header.text) : Any[header.text]
+    paragraph = Markdown.Paragraph(content)
+    _translate!(paragraph; translator)
+    header.text = paragraph.content
+    header
+end
+
+function _translate!(table::Markdown.Table; translator = translate_documenter_md_with_plamo)
+    for row in table.rows, index in eachindex(row)
+        content = row[index] isa AbstractVector ? copy(row[index]) : Any[row[index]]
+        # An identifier-only or empty cell has no prose to translate.
+        all(
+            node ->
+                node isa Markdown.Code || (node isa AbstractString && isempty(strip(node))),
+            content,
+        ) && continue
+        paragraph = Markdown.Paragraph(content)
+        _translate!(paragraph; translator)
+        row[index] = paragraph.content
+    end
+    table
+end
+
+_translate!(code::Markdown.Code) = code
 
 function _translate!(list::Markdown.List)
     for item in list.items

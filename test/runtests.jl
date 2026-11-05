@@ -119,6 +119,45 @@ end
     end
 end
 
+@testset "Heading and table prose with preserved code" begin
+    md = Markdown.parse(
+        "# Examples\n\n| Name | Meaning |\n|:---|---:|\n| `x` | Input |\n\n```julia\nf(x) = x\n```\n",
+    )
+    heading, table, code = md.content
+    original_alignment = copy(table.align)
+    original_code = code.code
+    calls = String[]
+    translated =
+        Dict("Examples"=>"使用例", "Name"=>"名前", "Meaning"=>"意味", "Input"=>"入力")
+    translator = doc -> begin
+        text = strip(string(doc))
+        push!(calls, text)
+        Markdown.parse(translated[text])
+    end
+    B._translate!(heading; translator)
+    B._translate!(table; translator)
+    B._translate!(code)
+    @test heading isa Markdown.Header{1}
+    @test occursin("使用例", string(Markdown.MD(heading)))
+    @test occursin("名前", string(Markdown.MD(table)))
+    @test occursin("意味", string(Markdown.MD(table)))
+    @test occursin("入力", string(Markdown.MD(table)))
+    @test table.align == original_alignment
+    @test length(table.rows) == 2
+    @test length.(table.rows) == [2, 2]
+    @test table.rows[2][1][1] isa Markdown.Code
+    @test table.rows[2][1][1].code == "x"
+    @test code.code == original_code
+    @test sort(calls) == sort(collect(keys(translated)))
+    empty = Markdown.Table([Any[Any[], Any[Markdown.Code("", "y")]]], [:l, :r])
+    B._translate!(
+        empty;
+        translator = doc->error("empty and code-only cells must be skipped"),
+    )
+    @test isempty(empty.rows[1][1])
+    @test empty.rows[1][2][1].code == "y"
+end
+
 @testset "Translation cache and safe absolute document paths" begin
     old = B.TRANSLATION_CACHE_DIR[]
     oldlang = B.default_lang()
@@ -187,6 +226,12 @@ if haskey(ENV, "PLAMO_SOURCE_DIR")
             string(B.translate_with_plamo("The meeting starts at ten."; lang = :ja)),
         ) == "会議は10時に始まります。"
         @test B.NATIVE_TRANSLATOR[] === first_model
+        structured = B.translate_docstring_with_plamo(
+            "# Examples\n\n| Meaning |\n|---|\n| Input |\n\n```julia\nf(x) = x\n```\n",
+        )
+        @test !occursin("Examples", string(Markdown.MD(structured.content[1])))
+        @test !occursin("Meaning", string(Markdown.MD(structured.content[2])))
+        @test occursin("f(x) = x", string(structured))
         configure_plamo!(; max_tokens = 1)
         @test_throws ErrorException B.translate_with_plamo(
             "The meeting starts at ten.";

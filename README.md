@@ -81,7 +81,7 @@ Native requests share one model and are serialized, including requests from thre
 
 ## Translation cache and Documenter
 
-Translations also use Scratch.jl, in a separate `translation-plamo3` cache. Entries are keyed by original Markdown, package/version and normalized language code. This namespace avoids mixing the previous Python backend's results with the new model; old caches are not deleted. Absolute Documenter paths are kept inside Scratch rather than becoming absolute cache destinations.
+Translations also use Scratch.jl, in a separate `translation-plamo3-v2-<model-revision>` cache. Entries are keyed by original Markdown, package/version and normalized language code. The revision/schema namespace avoids mixing previous Python or older traversal results with the new model; old caches are not deleted. Absolute Documenter paths are kept inside Scratch rather than becoming absolute cache destinations.
 
 ```julia
 using DocstringTranslationPLaMoBackend
@@ -92,7 +92,7 @@ DocstringTranslationPLaMoBackend.switchtargetpackage!(MyPackage)
 Documenter.makedocs(; modules=[MyPackage])
 ```
 
-Code blocks remain unchanged. Existing Markdown link protection and its fallback to the original paragraph are retained. Generated translations still need review before publishing documentation.
+Heading and table prose is translated while preserving heading levels, table alignment and code-only cells. Code blocks remain unchanged. Existing Markdown link protection and its fallback to the original paragraph are retained. Generated translations still need review before publishing documentation.
 
 ## Tests and implementation provenance
 

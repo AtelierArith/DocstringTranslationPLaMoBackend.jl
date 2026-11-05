@@ -34,7 +34,7 @@ export @switchlang!
 export configure_plamo!, install_model!
 
 function __init__()
-    scratch_name = "translation-plamo3"
+    scratch_name = "translation-plamo3-v2-" * MODEL_REVISION
     DOCUMENTER_TARGET_PACKAGE[] = Dict(:name=>"julia", :version=>VERSION)
     global TRANSLATION_CACHE_DIR[] = @get_scratch!(scratch_name)
     MODEL_CACHE_DIR[] = @get_scratch!("plamo-3-translate-0.8b-" * MODEL_REVISION)
