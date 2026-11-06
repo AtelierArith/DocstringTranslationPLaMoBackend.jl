@@ -229,7 +229,8 @@ if haskey(ENV, "PLAMO_SOURCE_DIR")
         structured = B.translate_docstring_with_plamo(
             "# Examples\n\n| Meaning |\n|---|\n| Input |\n\n```julia\nf(x) = x\n```\n",
         )
-        @test !occursin("Examples", string(Markdown.MD(structured.content[1])))
+        @test !occursin("Examples", string(structured.content[1].text[1].text))
+        @test structured.content[1].text[1].url == "@id Examples"
         @test !occursin("Meaning", string(Markdown.MD(structured.content[2])))
         @test occursin("f(x) = x", string(structured))
         configure_plamo!(; max_tokens = 1)
@@ -284,5 +285,105 @@ end
     finally
         B.switchtranslationcachedir!(old)
         B._switchlang!(oldlang)
+    end
+end
+
+@testset "Translated Documenter section references" begin
+    old = B.TRANSLATION_CACHE_DIR[]
+    oldmodel = B.MODEL_CACHE_DIR[]
+    try
+        mktempdir() do directory
+            B.switchtranslationcachedir!(joinpath(directory, "cache"))
+            # A cache miss must fail instead of invoking locally installed weights.
+            B.MODEL_CACHE_DIR[] = joinpath(directory, "no-model")
+            source = joinpath(directory, "src")
+            mkpath(source)
+            pages = [
+                "index.md" => """
+                # Examples
+
+                See [Examples](@ref), [Details](@ref), and [named](@ref stable-id).
+
+                ## Details
+
+                ### [Named section](@id stable-id)
+
+                ```julia
+                x = :Examples
+                ```
+                """,
+                "other.md" => """
+                # Other page
+
+                See [Examples](@ref), [Details](@ref), and [named](@ref stable-id).
+                Also see [direct](index.md#Examples).
+                """,
+            ]
+            translations = Dict(
+                "Examples" => "使用例",
+                "Details" => "詳細",
+                "Named section" => "名前付きの節",
+                "Other page" => "別のページ",
+            )
+            translator = doc -> Markdown.parse(translations[strip(string(doc))])
+            for (file, text) in pages
+                path = joinpath(source, file)
+                write(path, text)
+                original = Markdown.parse(text)
+                # makedocs changes into root and passes source-relative paths.
+                original.meta[:path] = joinpath("src", file)
+                translated = B.cached_translation(
+                    original;
+                    translator = md -> begin
+                        for node in md.content
+                            node isa Markdown.Header && B._translate!(node; translator)
+                        end
+                        md
+                    end,
+                )
+                # Exercise serialized cache reload, as the Page hook will do.
+                reloaded = B.load_translation(original)
+                @test string(reloaded) == string(translated)
+                if file == "index.md"
+                    headings = filter(node -> node isa Markdown.Header, reloaded.content)
+                    @test headings[1] isa Markdown.Header{1}
+                    @test headings[2] isa Markdown.Header{2}
+                    @test headings[3] isa Markdown.Header{3}
+                    @test [h.text[1].url for h in headings] == ["@id Examples", "@id Details", "@id stable-id"]
+                    @test headings[3].text[1].text == ["名前付きの節"]
+                    @test reloaded.content[end].code == "x = :Examples"
+                    # Repeated translation keeps the original ID.
+                    B._translate!(headings[1]; translator = doc -> doc)
+                    @test headings[1].text[1].url == "@id Examples"
+                end
+            end
+            Documenter.makedocs(;
+                root = directory,
+                sitename = "Offline translated references",
+                pages = ["index.md", "other.md"],
+                format = Documenter.HTML(
+                    prettyurls = false,
+                    edit_link = nothing,
+                    repolink = nothing,
+                    inventory_version = "0.0.0",
+                ),
+                remotes = nothing,
+                doctest = false,
+            )
+            index = read(joinpath(directory, "build", "index.html"), String)
+            other = read(joinpath(directory, "build", "other.html"), String)
+            @test occursin("使用例", index)
+            @test occursin("詳細", index)
+            @test occursin("名前付きの節", index)
+            for id in ["Examples", "Details", "stable-id"]
+                @test occursin("id=\"$id\"", index)
+                @test occursin("href=\"#$id\"", index)
+                @test occursin("href=\"index.html#$id\"", other)
+            end
+            @test isnothing(B.NATIVE_TRANSLATOR[])
+        end
+    finally
+        B.switchtranslationcachedir!(old)
+        B.MODEL_CACHE_DIR[] = oldmodel
     end
 end
