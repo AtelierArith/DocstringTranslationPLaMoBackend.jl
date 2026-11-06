@@ -121,9 +121,24 @@ function _translate!(
     translator = translate_documenter_md_with_plamo,
 )
     content = header.text isa AbstractVector ? copy(header.text) : Any[header.text]
+    # Match Documenter's heading slug calculation before changing display text.
+    # An explicit label already supplies the stable destination; translate its
+    # contents rather than protecting the entire link as paragraph prose does.
+    labeled =
+        length(content) == 1 &&
+        content[1] isa Markdown.Link &&
+        occursin(r"^@id (.+)$", content[1].url)
+    destination = if labeled
+        content[1].url
+    else
+        "@id " * Documenter.slugify(sprint(Markdown.plain, Markdown.Paragraph(content)))
+    end
+    if labeled
+        content = deepcopy(content[1].text)
+    end
     paragraph = Markdown.Paragraph(content)
     _translate!(paragraph; translator)
-    header.text = paragraph.content
+    header.text = Any[Markdown.Link(paragraph.content, destination)]
     header
 end
 
