@@ -94,25 +94,27 @@ const M = Base.get_extension(B, :DocstringTranslationPLaMoBackendMetalExt)
     @test Array(M.rms_norm_gpu(MtlArray(x_wide), MtlArray(norm_wide), 1.0f-5)) ≈
           P.rms_norm(x_wide, norm_wide, 1.0f-5) rtol=2.0f-5 atol=2.0f-5
 
-    input = randn(Float32, 1537, 1)
-    skip = randn(Float32, 1537, 1)
-    post_weight = randn(Float32, 1537)
-    pre_weight = randn(Float32, 1537)
-    expected_residual = P.rms_norm(input, post_weight, 1.0f-5) .+ skip
-    expected_norm = P.rms_norm(expected_residual, pre_weight, 1.0f-5)
-    result_residual = MtlArray{Float32}(undef, size(input))
-    result_norm = MtlArray{Float32}(undef, size(input))
-    M.dual_rms_gpu!(
-        result_residual,
-        result_norm,
-        MtlArray(input),
-        MtlArray(skip),
-        MtlArray(post_weight),
-        MtlArray(pre_weight),
-        1.0f-5,
-    )
-    @test Array(result_residual) ≈ expected_residual rtol=2.0f-5 atol=2.0f-5
-    @test Array(result_norm) ≈ expected_norm rtol=2.0f-5 atol=2.0f-5
+    for count in (1, 3, 128)
+        input = randn(Float32, 1537, count)
+        skip = randn(Float32, 1537, count)
+        post_weight = randn(Float32, 1537)
+        pre_weight = randn(Float32, 1537)
+        expected_residual = P.rms_norm(input, post_weight, 1.0f-5) .+ skip
+        expected_norm = P.rms_norm(expected_residual, pre_weight, 1.0f-5)
+        result_residual = MtlArray{Float32}(undef, size(input))
+        result_norm = MtlArray{Float32}(undef, size(input))
+        M.dual_rms_gpu!(
+            result_residual,
+            result_norm,
+            MtlArray(input),
+            MtlArray(skip),
+            MtlArray(post_weight),
+            MtlArray(pre_weight),
+            1.0f-5,
+        )
+        @test Array(result_residual) ≈ expected_residual rtol=2.0f-5 atol=2.0f-5
+        @test Array(result_norm) ≈ expected_norm rtol=2.0f-5 atol=2.0f-5
+    end
 
     for columns in (1, 3)
         host_weight = Metal.BFloat16.(randn(Float32, 19, 35))
@@ -375,8 +377,8 @@ end
 if get(ENV, "PLAMO_METAL_REAL_MODEL", "0") == "1"
     @testset "Metal forward matches CPU" begin
         directory = B.model_directory()
-        cpu = P.Model(directory; context_size = 256, weight_storage = :bf16)
-        gpu = M.MetalModel(directory; context_size = 256, weight_storage = :bf16)
+        cpu = P.Model(directory; context_size = 384, weight_storage = :bf16)
+        gpu = M.MetalModel(directory; context_size = 384, weight_storage = :bf16)
         cpu_state = P.ForwardState(cpu; capacity = 32)
         gpu_state = M.MetalState(gpu, 32)
         token_state = M.MetalState(gpu, 32)
@@ -388,11 +390,11 @@ if get(ENV, "PLAMO_METAL_REAL_MODEL", "0") == "1"
             @test M.forward_gpu!(gpu, ids, token_state; token_only = true) ==
                   argmax(expected) - 1
         end
-        # Exercise the prefill chunk boundary and a subsequent decode.
-        cpu_state = P.ForwardState(cpu; capacity = 200)
-        gpu_state = M.MetalState(gpu, 200)
-        token_state = M.MetalState(gpu, 200)
-        for ids in (collect(1:128), collect(129:140), [5])
+        # Reuse a full prefill workspace, then resize it for a shorter tail.
+        cpu_state = P.ForwardState(cpu; capacity = 320)
+        gpu_state = M.MetalState(gpu, 320)
+        token_state = M.MetalState(gpu, 320)
+        for ids in (collect(1:128), collect(129:256), collect(257:268), [5])
             expected = P.forward!(cpu, ids, cpu_state)
             actual = M.forward_gpu!(gpu, ids, gpu_state)
             @test actual ≈ expected rtol=2.0f-3 atol=2.0f-3
@@ -425,18 +427,18 @@ if get(ENV, "PLAMO_METAL_REAL_MODEL", "0") == "1" && M.use_hybrid_prefill(
     @testset "Float32 prefill cache matches CPU" begin
         GC.gc(true)
         directory = B.model_directory()
-        cpu = P.Model(directory; context_size = 256, weight_storage = :bf16)
+        cpu = P.Model(directory; context_size = 384, weight_storage = :bf16)
         gpu = M.MetalModel(
             directory;
-            context_size = 256,
+            context_size = 384,
             weight_storage = :bf16,
             hybrid = true,
         )
         @test !isnothing(first(gpu.layers).prefill)
-        cpu_state = P.ForwardState(cpu; capacity = 160)
-        gpu_state = M.MetalState(gpu, 160)
-        token_state = M.MetalState(gpu, 160)
-        for ids in (collect(1:128), [5], [6])
+        cpu_state = P.ForwardState(cpu; capacity = 320)
+        gpu_state = M.MetalState(gpu, 320)
+        token_state = M.MetalState(gpu, 320)
+        for ids in (collect(1:128), collect(129:256), [5], [6])
             expected = P.forward!(cpu, ids, cpu_state)
             actual = M.forward_gpu!(gpu, ids, gpu_state)
             @test actual ≈ expected rtol=2.0f-3 atol=2.0f-3

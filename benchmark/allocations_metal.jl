@@ -77,6 +77,15 @@ function allocation_profile(model, state)
     Profile.Allocs.clear()
 end
 
+function buffer_profile(f::F, model, state, args...; position = 128) where {F}
+    state.position = position
+    activity = Metal.@profile f(model, state, args...)
+    println("\nGPU buffer creation API calls for ", nameof(f), ":")
+    for (name, count) in zip(activity.host.name, activity.host.calls)
+        occursin("newBuffer", name) && println(name, " = ", count)
+    end
+end
+
 function main()
     directory = Backend.model_directory()
     Backend.verify_model(directory)
@@ -114,12 +123,8 @@ function main()
     end
     static_report(prefill_token!, (model, state, ids))
     allocation_profile(model, state)
-    state.position = 128
-    activity = Metal.@profile decode_token!(model, state)
-    println("\nGPU buffer creation API calls during one warm decode:")
-    for (name, count) in zip(activity.host.name, activity.host.calls)
-        occursin("newBuffer", name) && println(name, " = ", count)
-    end
+    buffer_profile(decode_token!, model, state)
+    buffer_profile(prefill_token!, model, state, ids; position = 0)
 end
 
 main()

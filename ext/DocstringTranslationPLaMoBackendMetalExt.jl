@@ -60,13 +60,14 @@ function dual_rms_kernel!(
     eps,
     width,
 )
+    token = Int(threadgroup_position_in_grid_1d())
     lane = Int(thread_index_in_simdgroup())
     tid = Int(thread_index_in_threadgroup())
     simd = Int(simdgroup_index_in_threadgroup())
     partial = MtlThreadGroupArray(Float32, 8)
     square = 0.0f0
     for i = tid:256:width
-        @inbounds square = muladd(input[i, 1], input[i, 1], square)
+        @inbounds square = muladd(input[i, token], input[i, token], square)
     end
     for offset in (16, 8, 4, 2, 1)
         square += simd_shuffle_down(square, offset)
@@ -82,8 +83,8 @@ function dual_rms_kernel!(
     square2 = 0.0f0
     for i = tid:256:width
         @inbounds begin
-            value = (input[i, 1] * scale) * post_weight[i] + residual[i, 1]
-            output[i, 1] = value
+            value = (input[i, token] * scale) * post_weight[i] + residual[i, token]
+            output[i, token] = value
             square2 = muladd(value, value, square2)
         end
     end
@@ -98,13 +99,13 @@ function dual_rms_kernel!(
     end
     scale2 = inv(sqrt(simd_shuffle(square2, 1) / width + eps))
     for i = tid:256:width
-        @inbounds normalized[i, 1] = (output[i, 1] * scale2) * pre_weight[i]
+        @inbounds normalized[i, token] = (output[i, token] * scale2) * pre_weight[i]
     end
     return
 end
 
 function dual_rms_gpu!(output, normalized, input, residual, post_weight, pre_weight, eps)
-    @metal threads=256 groups=1 dual_rms_kernel!(
+    @metal threads=256 groups=size(input, 2) dual_rms_kernel!(
         output,
         normalized,
         input,
@@ -653,6 +654,45 @@ function masked_softmax_kernel!(
     return
 end
 
+# Contiguous K/V slices share storage with the cache. Callers can also reuse
+# query, score and output buffers across all layers of a prefill chunk.
+function matrix_attention_gpu!(
+    output,
+    query_buffer,
+    scores2,
+    query,
+    keys,
+    values,
+    position,
+    start,
+    full,
+    window,
+    dim,
+    heads,
+)
+    nqueries = size(query, 2)
+    nkeys = position + nqueries - start + 1
+    copyto!(query_buffer, query)
+    q = reshape(query_buffer, dim, heads*nqueries)
+    k = @view keys[:, start:(position+nqueries)]
+    v = @view values[:, start:(position+nqueries)]
+    mul!(scores2, transpose(k), q)
+    scores = reshape(scores2, nkeys, heads, nqueries)
+    @metal threads=128 groups=cld(heads*nqueries, 4) masked_softmax_kernel!(
+        scores,
+        position,
+        start,
+        full,
+        window,
+        heads,
+        nkeys,
+        nqueries,
+        inv(sqrt(Float32(dim))),
+    )
+    mul!(reshape(output, dim, heads*nqueries), v, scores2)
+    return output
+end
+
 function attention_gpu(
     query,
     keys,
@@ -668,26 +708,23 @@ function attention_gpu(
     nqueries = size(query, 2)
     nkeys = position + nqueries - start + 1
     if nqueries >= 32 && kv_heads == 1
-        # Every query head shares the same K/V matrices. Flattening heads and
-        # tokens lets MPS evaluate both attention products as dense GEMMs.
-        q = reshape(copy(query), dim, heads*nqueries)
-        k = copy(@view keys[:, start:(position+nqueries)])
-        v = copy(@view values[:, start:(position+nqueries)])
-        scores2 = transpose(k)*q
-        scores = reshape(scores2, nkeys, heads, nqueries)
-        @metal threads=128 groups=cld(heads*nqueries, 4) masked_softmax_kernel!(
+        query_buffer = similar(query)
+        scores = MtlArray{Float32}(undef, nkeys, heads*nqueries)
+        output = MtlArray{Float32}(undef, dim*heads, nqueries)
+        return matrix_attention_gpu!(
+            output,
+            query_buffer,
             scores,
+            query,
+            keys,
+            values,
             position,
             start,
             full,
             window,
+            dim,
             heads,
-            nkeys,
-            nqueries,
-            inv(sqrt(Float32(dim))),
         )
-        result = v*reshape(scores, nkeys, heads*nqueries)
-        return reshape(result, dim*heads, nqueries)
     end
     if nqueries == 1 && nkeys <= 2048
         return single_attention_gpu(

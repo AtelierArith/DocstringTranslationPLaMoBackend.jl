@@ -128,12 +128,41 @@ function DecodeWorkspace(c, capacity)
     )
 end
 
+struct PrefillWorkspace{A}
+    hidden::A
+    residual::A
+    normalized::A
+    projected::A
+    qkv::A
+    attended::A
+    query::A
+    gate_up::A
+    gate::A
+end
+
+function PrefillWorkspace(c, count)
+    allocate(rows) = MtlArray{Float32}(undef, rows, count)
+    qdim, kdim = c.heads * c.head_dim, c.kv_heads * c.head_dim
+    PrefillWorkspace(
+        allocate(c.hidden),
+        allocate(c.hidden),
+        allocate(c.hidden),
+        allocate(c.hidden),
+        allocate(qdim + 2kdim),
+        allocate(qdim),
+        allocate(qdim),
+        allocate(2c.intermediate),
+        allocate(c.intermediate),
+    )
+end
+
 mutable struct MetalState{A,W}
     keys::Vector{A}
     values::Vector{A}
     position::Int
     capacity::Int
     workspace::W
+    prefill::Union{Nothing,PrefillWorkspace{A}}
 end
 function MetalState(m::MetalModel, capacity::Int)
     1 <= capacity <= m.capacity || throw(ArgumentError("invalid cache capacity"))
@@ -144,6 +173,7 @@ function MetalState(m::MetalModel, capacity::Int)
         0,
         capacity,
         DecodeWorkspace(m.config, capacity),
+        nothing,
     )
 end
 
@@ -384,18 +414,32 @@ function forward_gpu!(m::MetalModel, ids, state::MetalState; token_only = false)
     c = m.config
     n = length(ids)
     pos = state.position
-    qdim, kdim = c.heads * c.head_dim, c.kv_heads * c.head_dim
-    x = embedding_gpu(m.embedding, ids)
-    c.scale_embedding && (x .*= sqrt(Float32(c.hidden)))
+    ws = state.prefill
+    if isnothing(ws) || size(ws.hidden, 2) != n
+        ws = PrefillWorkspace(c, n)
+        state.prefill = ws
+    end
+    qdim = c.heads * c.head_dim
+    dev_ids = MtlArray(Int32.(ids))
+    @metal threads=256 groups=cld(c.hidden*n, 256) embedding_kernel!(
+        ws.hidden,
+        m.embedding,
+        dev_ids,
+        c.hidden,
+        n,
+    )
+    c.scale_embedding && (ws.hidden .*= sqrt(Float32(c.hidden)))
+    rms_norm_gpu!(ws.normalized, ws.hidden, first(m.layers).pre_attn, c.eps)
+    full_scores = local_scores = nothing
     for (index, layer) in enumerate(m.layers)
-        prefill = n > 1 && !isnothing(layer.prefill) ? layer.prefill : nothing
+        prefill = layer.prefill
         wq, wo, wg, wd =
             isnothing(prefill) ? (layer.qkv, layer.out, layer.gate_up, layer.down) : prefill
-        qkv = projection_gpu(wq, rms_norm_gpu(x, layer.pre_attn, c.eps))
-        q = @view qkv[1:qdim, :]
+        projection_gpu!(ws.qkv, wq, ws.normalized)
+        q = @view ws.qkv[1:qdim, :]
         co, si = layer.full ? (m.full_cos, m.full_sin) : (m.local_cos, m.local_sin)
         rotate_qk_gpu!(
-            qkv,
+            ws.qkv,
             layer.qnorm,
             layer.knorm,
             c.eps,
@@ -408,31 +452,78 @@ function forward_gpu!(m::MetalModel, ids, state::MetalState; token_only = false)
             values = state.values[index],
         )
         start = layer.full ? 1 : max(1, pos + 2 - c.window)
-        attended = attention_gpu(
-            q,
-            state.keys[index],
-            state.values[index],
-            pos,
-            start,
-            layer.full,
-            c.window,
-            c.head_dim,
-            c.heads,
-            c.kv_heads,
+        attended = if n >= 32 && c.kv_heads == 1
+            nkeys = pos + n - start + 1
+            scores = if layer.full
+                if isnothing(full_scores)
+                    full_scores = MtlArray{Float32}(undef, nkeys, c.heads*n)
+                end
+                full_scores
+            else
+                if isnothing(local_scores)
+                    local_scores = MtlArray{Float32}(undef, nkeys, c.heads*n)
+                end
+                local_scores
+            end
+            matrix_attention_gpu!(
+                ws.attended,
+                ws.query,
+                scores,
+                q,
+                state.keys[index],
+                state.values[index],
+                pos,
+                start,
+                layer.full,
+                c.window,
+                c.head_dim,
+                c.heads,
+            )
+        else
+            attention_gpu(
+                q,
+                state.keys[index],
+                state.values[index],
+                pos,
+                start,
+                layer.full,
+                c.window,
+                c.head_dim,
+                c.heads,
+                c.kv_heads,
+            )
+        end
+        projection_gpu!(ws.projected, wo, attended)
+        dual_rms_gpu!(
+            ws.residual,
+            ws.normalized,
+            ws.projected,
+            ws.hidden,
+            layer.post_attn,
+            layer.pre_mlp,
+            c.eps,
         )
-        output = projection_gpu(wo, attended)
-        output = rms_norm_gpu(output, layer.post_attn, c.eps; residual = x)
-        gate_up = projection_gpu(wg, rms_norm_gpu(output, layer.pre_mlp, c.eps))
-        gate = @view gate_up[1:c.intermediate, :]
-        up = @view gate_up[(c.intermediate+1):end, :]
-        activated = @. (gate / (1.0f0 + exp(-gate))) * up
-        mlp = projection_gpu(wd, activated)
-        x = rms_norm_gpu(mlp, layer.post_mlp, c.eps; residual = output)
+        projection_gpu!(ws.gate_up, wg, ws.normalized)
+        gate = @view ws.gate_up[1:c.intermediate, :]
+        up = @view ws.gate_up[(c.intermediate+1):end, :]
+        @. ws.gate = (gate / (1.0f0 + exp(-gate))) * up
+        projection_gpu!(ws.projected, wd, ws.gate)
+        next_norm = index < length(m.layers) ? m.layers[index+1].pre_attn : m.norm
+        dual_rms_gpu!(
+            ws.hidden,
+            ws.normalized,
+            ws.projected,
+            ws.residual,
+            layer.post_mlp,
+            next_norm,
+            c.eps,
+        )
     end
     state.position += n
-    hidden = copy(@view x[:, end:end])
-    logits = projection_gpu(m.head, rms_norm_gpu(hidden, m.norm, c.eps))
-    return token_only ? gpu_token(logits) : vec(Array(logits))
+    hidden = @view ws.normalized[:, end:end]
+    projection_gpu!(state.workspace.logits, m.head, hidden)
+    return token_only ? gpu_token(state.workspace.logits) :
+           vec(Array(state.workspace.logits))
 end
 
 function embedding_decode_kernel!(output, weight, token, hidden)

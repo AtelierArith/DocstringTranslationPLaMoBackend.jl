@@ -59,12 +59,16 @@ allocation measurements (128-token prompt, request capacity 512):
 | Decode, token result, vector input | 98,096 |
 | Decode, token result, tuple input (production) | 98,032 |
 | Decode, full CPU logits | 534,384 |
-| Prefill, 128 tokens, token result | 515,696 |
+| Prefill, 128 tokens, token result | 397,360 |
 
 Making the split-attention launch types concrete reduced token decode from
 103,408 to 98,032 host bytes/call. The allocation trace attributes most remaining
-bytes to GPU kernel-launch call sites. The warm decode profile observed one
-`newBufferWithLength:options:` call, so decode still creates a GPU buffer.
+bytes to GPU kernel-launch call sites. Reusing prefill intermediates and score
+buffers reduced warm prefill host allocation from 515,696 to 397,360 bytes/call.
+The GPU profile observed one `newBufferWithLength:options:` call for warm decode
+and four for warm prefill; the earlier allocating prefill path observed 246.
+The first prefill also allocates its request-owned workspace, which is retained
+for chunks of the same length and resized for a different length.
 AllocCheck also reports potential allocation sites and unresolved dispatches in
 Metal's launch/runtime paths; this is not an allocation-free inference path.
 
