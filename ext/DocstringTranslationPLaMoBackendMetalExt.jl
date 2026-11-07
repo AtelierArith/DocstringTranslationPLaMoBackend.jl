@@ -772,6 +772,7 @@ function attention_gpu(
     return output
 end
 
+include("metal_token.jl")
 include("metal_model.jl")
 
 end

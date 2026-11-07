@@ -56,17 +56,23 @@ allocation measurements (128-token prompt, request capacity 512):
 
 | Operation | Julia host bytes/call |
 | --- | ---: |
-| Decode, token result, vector input | 98,096 |
-| Decode, token result, tuple input (production) | 98,032 |
+| Decode, token result, vector input | 93,296 |
+| Decode, token result, tuple input (production) | 93,232 |
 | Decode, full CPU logits | 534,384 |
-| Prefill, 128 tokens, token result | 397,264 |
+| Prefill, 128 tokens, token result | 392,768 |
 
 Making the split-attention launch types concrete reduced token decode from
 103,408 to 98,032 host bytes/call. The allocation trace attributes most remaining
 bytes to GPU kernel-launch call sites. Reusing prefill intermediates and score
 buffers reduced warm prefill host allocation from 515,696 to 397,264 bytes/call.
-The GPU profile observed one `newBufferWithLength:options:` call for warm decode
-and four for warm prefill; the earlier allocating prefill path observed 246.
+A request-owned token-selection buffer further reduced production decode to
+93,232 bytes and prefill to 392,768 bytes. One GPU kernel scans the vocabulary
+into partial maxima; the host selects the final winner from these compact
+partials (105 for the pinned vocabulary), preserving first-index, NaN and signed
+zero ordering. Paired full-decode benchmarks found no material speed change.
+The GPU profile now observed no buffer-creation API calls for warm decode and
+three for warm prefill, down from one and four before token-buffer reuse. The
+earlier allocating prefill path observed 246.
 The first prefill also allocates its request-owned workspace, which is retained
 for chunks of the same length and resized for a different length.
 AllocCheck also reports potential allocation sites and unresolved dispatches in

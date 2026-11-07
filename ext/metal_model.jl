@@ -99,7 +99,7 @@ function MetalModel(
     )
 end
 
-struct DecodeWorkspace{A,S}
+struct DecodeWorkspace{A,S,T}
     hidden::A
     residual::A
     normalized::A
@@ -110,6 +110,7 @@ struct DecodeWorkspace{A,S}
     gate::A
     logits::A
     attention_partial::S
+    token_partial::T
 end
 function DecodeWorkspace(c, capacity)
     allocate(rows) = MtlArray{Float32}(undef, rows, 1)
@@ -125,6 +126,7 @@ function DecodeWorkspace(c, capacity)
         allocate(c.intermediate),
         allocate(c.vocabulary),
         MtlArray{Float32}(undef, c.head_dim+2, c.heads, cld(min(capacity, 2048), 32)),
+        MtlArray{Tuple{Float32,Int32}}(undef, cld(c.vocabulary, 1024)),
     )
 end
 
@@ -577,7 +579,7 @@ function forward_gpu!(m::MetalModel, ids, state::MetalState; token_only = false)
     state.position += n
     hidden = @view ws.normalized[:, end:end]
     projection_gpu!(state.workspace.logits, m.head, hidden)
-    return token_only ? gpu_token(state.workspace.logits) :
+    return token_only ? gpu_token!(state.workspace.logits, state.workspace.token_partial) :
            vec(Array(state.workspace.logits))
 end
 
@@ -696,7 +698,7 @@ function forward_decode_gpu!(
     end
     state.position += 1
     projection_gpu!(ws.logits, m.head, ws.normalized)
-    return token_only ? gpu_token(ws.logits) : vec(Array(ws.logits))
+    return token_only ? gpu_token!(ws.logits, ws.token_partial) : vec(Array(ws.logits))
 end
 
 struct MetalTranslator{M} <: B.AbstractMetalTranslator
