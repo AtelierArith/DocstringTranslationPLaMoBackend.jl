@@ -160,19 +160,28 @@ end
 
 _translate!(code::Markdown.Code) = code
 
+# GPU inference is serialized by MODEL_LOCK. Do not create Julia worker tasks
+# for a traversal that only feeds the same Metal device.
+function foreach_translation(f, items)
+    if metal_selected()
+        foreach(f, items)
+    else
+        Base.Threads.@threads for i in eachindex(items)
+            f(items[i])
+        end
+    end
+    return nothing
+end
+
 function _translate!(list::Markdown.List)
     for item in list.items
-        Base.Threads.@threads for i in item
-            _translate!(i)
-        end
+        foreach_translation(_translate!, item)
     end
 end
 
 function _translate!(c)
     if hasproperty(c, :content)
-        Base.Threads.@threads for c in c.content
-            _translate!(c)
-        end
+        foreach_translation(_translate!, c.content)
     end
     c
 end
@@ -189,12 +198,10 @@ Translate a Markdown document in-place using native PLaMo.jl inference.
 The translated Markdown document (same object as input)
 
 # Details
-Recursively translates all content in the Markdown document using multiple threads.
+Recursively translates Markdown content, using Julia threads for the CPU backend.
 Translation is done in-place, modifying the original document.
 """
 function translate_md!(md::Markdown.MD)
-    Base.Threads.@threads for c in md.content
-        _translate!(c)
-    end
+    foreach_translation(_translate!, md.content)
     md
 end

@@ -26,7 +26,7 @@ const Native = B.PLaMo
     @test !haskey(project["deps"], "CondaPkg")
     @test !isfile(joinpath(pkgdir(B), "CondaPkg.toml"))
     configure_plamo!(; context_size = 512, max_tokens = 32, weight_storage = :f32)
-    @test B.MODEL_OPTIONS[] == (context_size = 512, max_tokens = 32, weight_storage = :f32)
+    @test B.MODEL_OPTIONS[] == (context_size = 512, max_tokens = 32, weight_storage = :f32, device = :auto)
     @test isnothing(B.NATIVE_TRANSLATOR[])
     @test_throws ArgumentError configure_plamo!(; context_size = 0)
     @test_throws ArgumentError configure_plamo!(; context_size = 32769)
@@ -34,6 +34,22 @@ const Native = B.PLaMo
     @test_throws ArgumentError configure_plamo!(; context_size = 128, max_tokens = 128)
     @test_throws ArgumentError configure_plamo!(; weight_storage = :f16)
     configure_plamo!()
+    @testset "Inference device selection" begin
+        configure_plamo!(; device = :cpu)
+        @test B.MODEL_OPTIONS[].device === :cpu
+        configure_plamo!(; device = :auto)
+        @test B.MODEL_OPTIONS[].device === :auto
+        configure_plamo!(; device = :metal)
+        @test B.MODEL_OPTIONS[].device === :metal
+        caller_thread = Threads.threadid()
+        observed_threads = Vector{Int}(undef, 32)
+        B.foreach_translation(1:32) do index
+            observed_threads[index] = Threads.threadid()
+        end
+        @test all(==(caller_thread), observed_threads)
+        @test_throws ArgumentError configure_plamo!(; device = :cuda)
+        configure_plamo!()
+    end
 end
 
 @testset "Language compatibility and native request contract" begin
