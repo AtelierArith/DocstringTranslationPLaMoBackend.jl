@@ -82,6 +82,31 @@ end
     @test isnothing(B.NATIVE_TRANSLATOR[])
 end
 
+@testset "Build accepts an offline model source" begin
+    mktempdir() do directory
+        stub = joinpath(directory, "DocstringTranslationPLaMoBackend", "src")
+        mkpath(stub)
+        write(joinpath(stub, "DocstringTranslationPLaMoBackend.jl"), """
+            module DocstringTranslationPLaMoBackend
+            export install_model!
+            function install_model!(; source_directory = nothing)
+                write(ENV["PLAMO_BUILD_MARKER"], string(source_directory))
+                return "cache"
+            end
+            end
+            """)
+        marker = joinpath(directory, "source-used")
+        source = joinpath(directory, "offline-checkpoint")
+        env = copy(ENV)
+        env["JULIA_LOAD_PATH"] = directory * (Sys.iswindows() ? ";" : ":") * "@stdlib"
+        env["PLAMO_SOURCE_DIR"] = source
+        env["PLAMO_BUILD_MARKER"] = marker
+        build = joinpath(pkgdir(B), "deps", "build.jl")
+        run(pipeline(setenv(`$(Base.julia_cmd()) --startup-file=no $build`, env); stdout = devnull))
+        @test read(marker, String) == source
+    end
+end
+
 @testset "Verified model cache, offline reuse and atomic recovery" begin
     mktempdir() do directory
         content = Dict(

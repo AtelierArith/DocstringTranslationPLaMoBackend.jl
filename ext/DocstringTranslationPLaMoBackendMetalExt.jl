@@ -298,6 +298,8 @@ function single_attention_kernel!(
     end
     threadgroup_barrier(Metal.MemoryFlagThreadGroup)
     @inbounds maximum_value = scratch[1]
+    # Every SIMD group must read the maximum before any group reuses scratch.
+    threadgroup_barrier(Metal.MemoryFlagThreadGroup)
     total = 0.0f0
     for key = tid:128:nkeys
         @inbounds begin

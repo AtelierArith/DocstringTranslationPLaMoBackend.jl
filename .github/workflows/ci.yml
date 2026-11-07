@@ -20,3 +20,14 @@ jobs:
       - uses: julia-actions/julia-runtest@v1
         env:
           JULIA_NUM_THREADS: '2'
+      - name: Prepare optional Metal tests
+        if: matrix.os == 'macos-latest'
+        run: julia --project=test/metal -e 'using Pkg; Pkg.instantiate(; allow_build=false)'
+      - name: Test Metal kernels when a GPU is available
+        if: matrix.os == 'macos-latest'
+        run: >-
+          julia --project=test/metal -e 'using Metal;
+          if Metal.functional(); include("test/metal.jl");
+          else; @warn "Metal tests skipped: this runner has no usable GPU"; end'
+        env:
+          JULIA_NUM_THREADS: '1'

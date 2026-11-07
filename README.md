@@ -55,7 +55,15 @@ To copy an existing official checkpoint into the Scratch cache without another d
 install_model!(; source_directory="/path/to/plamo-3-translate-0.8b")
 ```
 
-Equivalently:
+To use an existing checkpoint during the automatic build, set
+`PLAMO_SOURCE_DIR` before instantiation or building:
+
+```sh
+PLAMO_SOURCE_DIR=/path/to/plamo-3-translate-0.8b \
+  julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.build("DocstringTranslationPLaMoBackend")'
+```
+
+The direct installer also accepts the path:
 
 ```sh
 julia --project install_model.jl /path/to/plamo-3-translate-0.8b
@@ -146,7 +154,9 @@ PLAMO_METAL_REAL_MODEL=1 julia --project=test/metal test/metal.jl
 ```
 
 The last command also checks real-model CPU/GPU logits, the prefill chunk
-boundary, and an end-to-end translation; it needs the cached model.
+boundary, and an end-to-end translation; it needs the cached model. CI runs the
+Metal kernel tests on its macOS runner when a usable GPU is exposed and reports
+a warning when it is not; the real-model check remains an explicit local test.
 
 The native sources were copied unchanged from PLaMo.jl at commit
 `e919a8a13e18aa997ee0d7708cd35fdb00812fdc`. See [provenance and update instructions](src/julia/UPSTREAM.md), [source checksums](src/julia/checksums.toml), and the [upstream MIT license](src/julia/LICENSE). Runtime setup uses only registered Julia packages and stdlibs.

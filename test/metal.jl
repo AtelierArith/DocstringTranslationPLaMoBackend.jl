@@ -37,6 +37,13 @@ const M = Base.get_extension(B, :DocstringTranslationPLaMoBackendMetalExt)
         @test Array(actual_projection) ≈ expected_projection rtol=2.0f-5 atol=2.0f-5
     end
 
+    for columns in (1, 3)
+        host_weight = randn(Float32, 19, 35)
+        host_input = randn(Float32, 19, columns)
+        @test Array(M.projection_gpu(MtlArray(host_weight), MtlArray(host_input))) ≈
+              transpose(host_weight) * host_input rtol=2.0f-5 atol=2.0f-5
+    end
+
     host_weight = Metal.BFloat16.(randn(Float32, 128, 32))
     host_input = randn(Float32, 128, 1)
     @test Array(M.projection_gpu(MtlArray(host_weight), MtlArray(host_input))) ≈
@@ -121,6 +128,66 @@ const M = Base.get_extension(B, :DocstringTranslationPLaMoBackendMetalExt)
             128,
             4,
             2,
+        )
+        @test Array(actual) ≈ reference rtol=3.0f-5 atol=3.0f-5
+    end
+
+    # Exercise SIMD groups with uneven numbers of keys repeatedly: all groups
+    # must read the softmax maximum before its shared slot can be reused.
+    for nkeys in (1, 3, 31, 33, 127, 128, 129)
+        query_decode = randn(Float32, 128 * 4, 1)
+        keys_decode = randn(Float32, 128 * 2, nkeys)
+        values_decode = randn(Float32, 128 * 2, nkeys)
+        reference = similar(query_decode)
+        P.grouped_attention!(
+            reference,
+            query_decode,
+            keys_decode,
+            values_decode,
+            nkeys - 1,
+            1,
+            true,
+            256,
+            128,
+            4,
+            2,
+        )
+        dq, dk, dv = MtlArray(query_decode), MtlArray(keys_decode), MtlArray(values_decode)
+        for _ = 1:10
+            result = M.single_attention_gpu(dq, dk, dv, nkeys - 1, 1, true, 256, 128, 4, 2)
+            @test Array(result) ≈ reference rtol=3.0f-5 atol=3.0f-5
+        end
+    end
+
+    for nkeys in (2048, 2049)
+        query_decode = randn(Float32, 8, 1)
+        keys_decode = randn(Float32, 4, nkeys)
+        values_decode = randn(Float32, 4, nkeys)
+        reference = similar(query_decode)
+        P.grouped_attention!(
+            reference,
+            query_decode,
+            keys_decode,
+            values_decode,
+            nkeys - 1,
+            1,
+            true,
+            nkeys,
+            4,
+            2,
+            1,
+        )
+        actual = M.attention_gpu(
+            MtlArray(query_decode),
+            MtlArray(keys_decode),
+            MtlArray(values_decode),
+            nkeys - 1,
+            1,
+            true,
+            nkeys,
+            4,
+            2,
+            1,
         )
         @test Array(actual) ≈ reference rtol=3.0f-5 atol=3.0f-5
     end
