@@ -6,6 +6,9 @@ const B = DocstringTranslationPLaMoBackend
 const P = B.PLaMo
 const M = Base.get_extension(B, :DocstringTranslationPLaMoBackendMetalExt)
 
+include("metal_token.jl")
+include("metal_quantization.jl")
+
 function reduction_test_kernel!(output, input)
     lane = Int(thread_index_in_simdgroup())
     value = @inbounds input[lane]

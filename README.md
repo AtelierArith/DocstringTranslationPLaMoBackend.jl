@@ -123,6 +123,28 @@ configure_plamo!(;
 )
 ```
 
+Metal also supports optional block quantization:
+
+```julia
+DocstringTranslationPLaMoBackend.configure_plamo!(
+    device=:metal,
+    weight_storage=:q8_0, # :q4_0 is also available; the default remains :bf16
+)
+```
+
+These modes quantize the pinned BF16 checkpoint when the translator loads; no
+additional model download or GGUF conversion is needed. The quantized values
+use Q8_0/Q4_0 reference rounding with an internal GPU layout. Quantization can
+change translation output. Activations, KV caches and accumulation remain
+Float32. Quantized storage requires Metal and is not available on CPU.
+
+The expanded prefill cache contains the selected format's dequantized values.
+Set `prefill_storage=:native` to disable the cache; this expands one projection
+at a time during prefill. `:bf16` remains an alias for disabling this cache.
+Quantization is repeated when a new translator is created; it is not persisted
+as a separate Scratch asset. See the benchmark comparison for load-time, memory
+and translation-output tradeoffs.
+
 Changing settings releases the cached translator; the next translation reloads it. `context_size` must accommodate the prompt plus `max_tokens`. Incomplete or empty translations raise an error and are not saved as completed documentation. For longer paragraphs/docstrings, increase both limits, for example `context_size=8192, max_tokens=2048`.
 
 Native requests share one model and are serialized. Markdown traversal and the PLaMo projection kernels can use Julia threads on CPU; Metal traversal is sequential. For CPU tuning you can separately set `LinearAlgebra.BLAS.set_num_threads(1)`; the package does not change global BLAS settings.
@@ -166,6 +188,8 @@ PLAMO_METAL_REAL_MODEL=1 julia --project=test/metal test/metal.jl
 PLAMO_METAL_F32_MODEL=1 julia --project=test/metal test/metal.jl
 # Exercise decode after 2048 cached tokens and the long-context attention path.
 PLAMO_METAL_LONG_MODEL=1 julia --project=test/metal test/metal.jl
+# Check Q8_0/Q4_0 against independent Float32 CPU models (needs extra memory).
+PLAMO_METAL_QUANT_MODEL=1 JULIA_NUM_THREADS=1 julia --project=test/metal test/metal.jl
 ```
 
 `PLAMO_METAL_REAL_MODEL=1` also checks real-model CPU/GPU logits, the prefill

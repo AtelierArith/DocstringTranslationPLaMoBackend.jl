@@ -1,0 +1,499 @@
+{
+  "recorded_date": "2026-11-07",
+  "source_commit": "61e8674269d8fc2466e14e5ee6e849b7d6ecf508",
+  "checkpoint_revision": "cc8e88169807d5a272e8ff06db12eb0129b67f81",
+  "hardware": "Apple M2 Max, 38 GPU cores, 96 GB",
+  "os": "macOS 26.7.1",
+  "conditions": {
+    "julia_threads": 1,
+    "blas_threads": 1,
+    "synthetic_prompt_tokens": 128,
+    "synthetic_decode_tokens": 64,
+    "kv_cache": "Float32",
+    "metal_prefill": "auto (Float32 dequantized cache active)",
+    "concurrent_cpu_work": true,
+    "model_payload_excludes": [
+      "request state",
+      "allocator overhead",
+      "transient buffers"
+    ]
+  },
+  "metal": {
+    "julia": "1.13.3",
+    "metal": "1.12.0",
+    "julia_threads": 1,
+    "repetitions": 7,
+    "results": [
+      {
+        "storage": "bf16",
+        "hybrid_prefill": true,
+        "load_seconds": 2.736865541,
+        "weight_bytes": 1780482048,
+        "prefill_cache_bytes": 2239758336,
+        "other_model_bytes": 940032,
+        "model_array_bytes": 4021180416,
+        "prefill_tps": 5068.412079958319,
+        "decode_tps": 164.6733968323729,
+        "short_seconds": 0.055950417,
+        "short_text": "会議は10時に始まります。",
+        "prefill_samples": [
+          4700.395677839287,
+          5158.794131871675,
+          4957.237436917701,
+          5085.696973910971,
+          5119.471056250468,
+          5049.17681258643,
+          5068.412079958319
+        ],
+        "decode_samples": [
+          168.14453584498253,
+          164.9020923200035,
+          163.4060979836581,
+          164.6733968323729,
+          140.36034228185343,
+          163.32794280516768,
+          165.63518519707583
+        ],
+        "short_samples": [
+          0.055826541,
+          0.05733575,
+          0.056382708,
+          0.055950417,
+          0.056639417,
+          0.055256083,
+          0.05489975
+        ],
+        "quality": [
+          {
+            "source": "The meeting starts at ten.",
+            "text": "会議は10時に始まります。",
+            "finish": "stop",
+            "generated_tokens": 7
+          },
+          {
+            "source": "Return the sum of the elements in the array.",
+            "text": "配列の要素の合計を返してください。",
+            "finish": "stop",
+            "generated_tokens": 8
+          },
+          {
+            "source": "Compute the eigenvalues and eigenvectors of a real symmetric matrix.",
+            "text": "実対称行列の固有値と固有ベクトルを計算せよ。",
+            "finish": "stop",
+            "generated_tokens": 14
+          },
+          {
+            "source": "Set `check=false` to skip the validation step.",
+            "text": "検証ステップをスキップするには `check=false` を設定してください。",
+            "finish": "stop",
+            "generated_tokens": 13
+          },
+          {
+            "source": "The function returns `nothing` when the input is empty.",
+            "text": "この関数は、入力が空の場合に `nothing` を返します。",
+            "finish": "stop",
+            "generated_tokens": 15
+          },
+          {
+            "source": "A scalar is broadcast across every element of the array.",
+            "text": "スカラーは配列のすべての要素にブロードキャストされます。",
+            "finish": "stop",
+            "generated_tokens": 11
+          },
+          {
+            "source": "Throw an ArgumentError if the dimensions do not match.",
+            "text": "寸法が一致しない場合は ArgumentError をスローします。",
+            "finish": "stop",
+            "generated_tokens": 11
+          },
+          {
+            "source": "Allocate an uninitialized array with the specified element type and dimensions.",
+            "text": "指定された要素型と次元を持つ未初期化の配列を割り当てます。",
+            "finish": "stop",
+            "generated_tokens": 13
+          }
+        ]
+      },
+      {
+        "storage": "q8_0",
+        "hybrid_prefill": true,
+        "load_seconds": 3.420290709,
+        "weight_bytes": 945881088,
+        "prefill_cache_bytes": 2239758336,
+        "other_model_bytes": 940032,
+        "model_array_bytes": 3186579456,
+        "prefill_tps": 5211.355054098344,
+        "decode_tps": 217.8432024603647,
+        "short_seconds": 0.045279458,
+        "short_text": "会議は10時に始まります。",
+        "prefill_samples": [
+          5168.019584210215,
+          5288.036235276795,
+          5211.355054098344,
+          5207.909512572219,
+          5186.534734729616,
+          5222.819772649023,
+          5242.634017289552
+        ],
+        "decode_samples": [
+          217.1280682787166,
+          216.71046469810742,
+          217.5820766764338,
+          217.8432024603647,
+          218.4483934869953,
+          217.98052703658797,
+          218.2845418950315
+        ],
+        "short_samples": [
+          0.045567167,
+          0.045129666,
+          0.045353292,
+          0.045106958,
+          0.045279458,
+          0.045501875,
+          0.045131792
+        ],
+        "quality": [
+          {
+            "source": "The meeting starts at ten.",
+            "text": "会議は10時に始まります。",
+            "finish": "stop",
+            "generated_tokens": 7
+          },
+          {
+            "source": "Return the sum of the elements in the array.",
+            "text": "配列の要素の合計を返してください。",
+            "finish": "stop",
+            "generated_tokens": 8
+          },
+          {
+            "source": "Compute the eigenvalues and eigenvectors of a real symmetric matrix.",
+            "text": "実対称行列の固有値と固有ベクトルを計算せよ。",
+            "finish": "stop",
+            "generated_tokens": 14
+          },
+          {
+            "source": "Set `check=false` to skip the validation step.",
+            "text": "検証ステップをスキップするには `check=false` を設定してください。",
+            "finish": "stop",
+            "generated_tokens": 13
+          },
+          {
+            "source": "The function returns `nothing` when the input is empty.",
+            "text": "この関数は、入力が空の場合に `nothing` を返します。",
+            "finish": "stop",
+            "generated_tokens": 15
+          },
+          {
+            "source": "A scalar is broadcast across every element of the array.",
+            "text": "スカラーは配列のすべての要素にブロードキャストされます。",
+            "finish": "stop",
+            "generated_tokens": 11
+          },
+          {
+            "source": "Throw an ArgumentError if the dimensions do not match.",
+            "text": "寸法が一致しない場合は ArgumentError をスローします。",
+            "finish": "stop",
+            "generated_tokens": 11
+          },
+          {
+            "source": "Allocate an uninitialized array with the specified element type and dimensions.",
+            "text": "指定された要素型と次元を持つ未初期化の配列を割り当てます。",
+            "finish": "stop",
+            "generated_tokens": 13
+          }
+        ]
+      },
+      {
+        "storage": "q4_0",
+        "hybrid_prefill": true,
+        "load_seconds": 3.329788917,
+        "weight_bytes": 500760576,
+        "prefill_cache_bytes": 2239758336,
+        "other_model_bytes": 940032,
+        "model_array_bytes": 2741458944,
+        "prefill_tps": 5070.07657835742,
+        "decode_tps": 165.94424395786896,
+        "short_seconds": 0.056302334,
+        "short_text": "会議は10時に始まります。",
+        "prefill_samples": [
+          5093.0153710784925,
+          5070.07657835742,
+          5032.1388555815465,
+          5072.496074264513,
+          4427.469863198445,
+          5160.076664226514,
+          5055.466964201962
+        ],
+        "decode_samples": [
+          166.11669366015354,
+          165.71969427243633,
+          165.9787086921299,
+          165.265585488533,
+          165.94424395786896,
+          156.80853777013684,
+          166.0333760240598
+        ],
+        "short_samples": [
+          0.056285291,
+          0.055784166,
+          0.056302334,
+          0.056655917,
+          0.055883833,
+          0.05650225,
+          0.063546375
+        ],
+        "quality": [
+          {
+            "source": "The meeting starts at ten.",
+            "text": "会議は10時に始まります。",
+            "finish": "stop",
+            "generated_tokens": 7
+          },
+          {
+            "source": "Return the sum of the elements in the array.",
+            "text": "配列の要素の合計を返してください。",
+            "finish": "stop",
+            "generated_tokens": 8
+          },
+          {
+            "source": "Compute the eigenvalues and eigenvectors of a real symmetric matrix.",
+            "text": "実対称行列の固有値と固有ベクトルを計算せよ。",
+            "finish": "stop",
+            "generated_tokens": 14
+          },
+          {
+            "source": "Set `check=false` to skip the validation step.",
+            "text": "`check=false` を設定してバリデーションステップをスキップします。",
+            "finish": "stop",
+            "generated_tokens": 14
+          },
+          {
+            "source": "The function returns `nothing` when the input is empty.",
+            "text": "この関数は、入力が空の場合に `nothing` を返します。",
+            "finish": "stop",
+            "generated_tokens": 15
+          },
+          {
+            "source": "A scalar is broadcast across every element of the array.",
+            "text": "スカラーは配列のすべての要素にブロードキャストされます。",
+            "finish": "stop",
+            "generated_tokens": 11
+          },
+          {
+            "source": "Throw an ArgumentError if the dimensions do not match.",
+            "text": "寸法が一致しない場合は ArgumentError をスローします。",
+            "finish": "stop",
+            "generated_tokens": 11
+          },
+          {
+            "source": "Allocate an uninitialized array with the specified element type and dimensions.",
+            "text": "指定された要素型と寸法を持つ未初期化の配列を割り当てる。",
+            "finish": "stop",
+            "generated_tokens": 13
+          }
+        ]
+      }
+    ]
+  },
+  "llama_cpp": {
+    "commit": "fd27b2034905f8dadd8bd6d2cc44595f4929d391",
+    "cpu_threads": 8,
+    "pure_quantization": true,
+    "kv_cache": "f32",
+    "synthetic_flash_attention": "off",
+    "short_flash_attention": "default auto",
+    "results": {
+      "bf16": {
+        "prefill": {
+          "mean_tps": 5332.848005,
+          "stddev_tps": 94.013158,
+          "median_tps": 5388.85,
+          "samples_tps": [
+            5205.26,
+            5392.46,
+            5388.85,
+            5441.05,
+            5229.2,
+            5274.97,
+            5398.14
+          ]
+        },
+        "decode": {
+          "mean_tps": 180.954328,
+          "stddev_tps": 1.710239,
+          "median_tps": 180.677,
+          "samples_tps": [
+            179.022,
+            182.97,
+            180.389,
+            182.682,
+            182.187,
+            178.753,
+            180.677
+          ]
+        },
+        "short": {
+          "median_ms": 64.4,
+          "samples_ms": [
+            58.83,
+            63.09,
+            64.72,
+            62.89,
+            64.4,
+            82.88,
+            90.76
+          ]
+        }
+      },
+      "q8_0": {
+        "prefill": {
+          "mean_tps": 5494.831394,
+          "stddev_tps": 466.113162,
+          "median_tps": 5686.11,
+          "samples_tps": [
+            5951.9,
+            5786.8,
+            5314.55,
+            5947.15,
+            5686.11,
+            4909.1,
+            4868.22
+          ]
+        },
+        "decode": {
+          "mean_tps": 171.895889,
+          "stddev_tps": 56.172788,
+          "median_tps": 191.549,
+          "samples_tps": [
+            200.466,
+            227.351,
+            186.287,
+            62.3026,
+            133.011,
+            191.549,
+            202.305
+          ]
+        },
+        "short": {
+          "median_ms": 61.55,
+          "samples_ms": [
+            89.89,
+            74.44,
+            53.92,
+            54.46,
+            70.07,
+            54.89,
+            61.55
+          ]
+        }
+      },
+      "q4_0": {
+        "prefill": {
+          "mean_tps": 5313.198187,
+          "stddev_tps": 473.250233,
+          "median_tps": 5102.29,
+          "samples_tps": [
+            4923.91,
+            6129.45,
+            4919.89,
+            5065.31,
+            5821.57,
+            5229.97,
+            5102.29
+          ]
+        },
+        "decode": {
+          "mean_tps": 266.178945,
+          "stddev_tps": 41.289186,
+          "median_tps": 282.786,
+          "samples_tps": [
+            296.37,
+            282.786,
+            302.005,
+            260.69,
+            190.624,
+            233.623,
+            297.154
+          ]
+        },
+        "short": {
+          "median_ms": 48.64,
+          "samples_ms": [
+            84.07,
+            48.25,
+            48.34,
+            54.35,
+            53.66,
+            44.53,
+            48.64
+          ]
+        }
+      }
+    }
+  },
+  "rss_separate_process": {
+    "bf16": {
+      "peak_rss_bytes": 5680267264,
+      "model_setup_seconds": 2.77769,
+      "repetitions": 1,
+      "scope": "macOS time -l entire Julia process; not Metal allocated bytes"
+    },
+    "q8_0": {
+      "peak_rss_bytes": 4148723712,
+      "model_setup_seconds": 4.961763041,
+      "repetitions": 1,
+      "scope": "macOS time -l entire Julia process; not Metal allocated bytes"
+    },
+    "q4_0": {
+      "peak_rss_bytes": 3916759040,
+      "model_setup_seconds": 5.086028167,
+      "repetitions": 1,
+      "scope": "macOS time -l entire Julia process; not Metal allocated bytes"
+    }
+  },
+  "allocation_diagnostics": {
+    "bf16": {
+      "decode_vector!_host_bytes": 93296,
+      "decode_token!_host_bytes": 93232,
+      "decode_logits!_host_bytes": 534384,
+      "prefill_host_bytes": 392768,
+      "warm_decode_gpu_buffer_api_calls": 0,
+      "warm_prefill_gpu_buffer_api_calls": 3
+    },
+    "q8_0": {
+      "decode_vector!_host_bytes": 96464,
+      "decode_token!_host_bytes": 96400,
+      "decode_logits!_host_bytes": 537552,
+      "prefill_host_bytes": 392944,
+      "warm_decode_gpu_buffer_api_calls": 0,
+      "warm_prefill_gpu_buffer_api_calls": 3
+    },
+    "q4_0": {
+      "decode_vector!_host_bytes": 96464,
+      "decode_token!_host_bytes": 96368,
+      "decode_logits!_host_bytes": 537520,
+      "prefill_host_bytes": 392336,
+      "warm_decode_gpu_buffer_api_calls": 0,
+      "warm_prefill_gpu_buffer_api_calls": 3
+    }
+  },
+  "payload_parity": {
+    "q8_0": {
+      "matrices": 66,
+      "packed_data_bytes": 890241024,
+      "float16_scales": 27820032,
+      "data_differences": 0,
+      "scale_differences": 0,
+      "reference": "llama-quantize --pure; Q4 reorders nibbles for the internal layout"
+    },
+    "q4_0": {
+      "matrices": 66,
+      "packed_data_bytes": 445120512,
+      "float16_scales": 27820032,
+      "data_differences": 0,
+      "scale_differences": 0,
+      "reference": "llama-quantize --pure; Q4 reorders nibbles for the internal layout"
+    }
+  }
+}

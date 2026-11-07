@@ -56,17 +56,23 @@ allocation measurements (128-token prompt, request capacity 512):
 
 | Operation | Julia host bytes/call |
 | --- | ---: |
-| Decode, token result, vector input | 98,096 |
-| Decode, token result, tuple input (production) | 98,032 |
+| Decode, token result, vector input | 93,296 |
+| Decode, token result, tuple input (production) | 93,232 |
 | Decode, full CPU logits | 534,384 |
-| Prefill, 128 tokens, token result | 397,264 |
+| Prefill, 128 tokens, token result | 392,768 |
 
 Making the split-attention launch types concrete reduced token decode from
 103,408 to 98,032 host bytes/call. The allocation trace attributes most remaining
 bytes to GPU kernel-launch call sites. Reusing prefill intermediates and score
 buffers reduced warm prefill host allocation from 515,696 to 397,264 bytes/call.
-The GPU profile observed one `newBufferWithLength:options:` call for warm decode
-and four for warm prefill; the earlier allocating prefill path observed 246.
+A request-owned token-selection buffer further reduced production decode to
+93,232 bytes and prefill to 392,768 bytes. One GPU kernel scans the vocabulary
+into partial maxima; the host selects the final winner from these compact
+partials (105 for the pinned vocabulary), preserving first-index, NaN and signed
+zero ordering. Paired full-decode benchmarks found no material speed change.
+The GPU profile now observed no buffer-creation API calls for warm decode and
+three for warm prefill, down from one and four before token-buffer reuse. The
+earlier allocating prefill path observed 246.
 The first prefill also allocates its request-owned workspace, which is retained
 for chunks of the same length and resized for a different length.
 AllocCheck also reports potential allocation sites and unresolved dispatches in
@@ -139,3 +145,90 @@ token/s. Its arithmetic-mean throughput was 4,809 prefill / 152 decode token/s;
 the table uses sample medians consistently for both implementations. Repeat on
 your target machine using the commands above. The short-translation timers have
 slightly different scopes, as described above.
+
+## BF16, Q8_0 and Q4_0
+
+Compare all supported formats through the actual Metal model loader:
+
+```sh
+PLAMO_BENCH_JSON=/tmp/plamo-storage.json JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  julia --project=benchmark benchmark/compare_storage.jl
+# Or benchmark one format with the existing tools:
+PLAMO_BENCH_DEVICE=metal PLAMO_BENCH_STORAGE=q8_0 PLAMO_BENCH_OUTPUT=token \
+  JULIA_NUM_THREADS=1 julia --project=benchmark benchmark/inference.jl 128 64 7
+PLAMO_BENCH_DEVICE=metal PLAMO_BENCH_STORAGE=q8_0 \
+  JULIA_NUM_THREADS=1 julia --project=benchmark benchmark/translation.jl
+PLAMO_ALLOC_STORAGE=q8_0 JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  julia --project=benchmark benchmark/allocations_metal.jl
+```
+
+The comparison loads each model sequentially, warms inference once, and reports
+seven samples by default (`PLAMO_BENCH_REPETITIONS`). Request-state construction
+is outside the synthetic timer; its lazy prefill workspace is inside. Real
+translation includes request/workspace setup. Eight translation examples are
+printed for comparing output, not as a complete quality evaluation.
+
+The opt-in quantizers use 32-value blocks and Float16 scales with Q8_0/Q4_0
+reference rounding. The internal GPU layout uses separate scales and adjacent
+Q4 nibbles; it is not a GGUF loader or a byte-compatible GGML block layout.
+BF16 is the default. Quantization runs on the CPU at translator creation, without
+Julia thread parallelism, and is not persisted. Activations, KV caches and dot
+product accumulation stay Float32. Prefill's expanded cache contains the chosen
+format's dequantized weights, not the original BF16 values.
+
+On the same M2 Max environment as above, the production implementation measured:
+
+| Median (7 samples) | BF16 | Q8_0 | Q4_0 |
+| --- | ---: | ---: | ---: |
+| Metal prefill, 128 tokens | 5,068 token/s | 5,211 token/s | 5,070 token/s |
+| Metal decode, 64 after 128 cached tokens | 165 token/s | 218 token/s | 166 token/s |
+| Metal short translation, 21 input / 7 output tokens | 56.0 ms | 45.3 ms | 56.3 ms |
+| llama.cpp prefill | 5,389 token/s | 5,686 token/s | 5,102 token/s |
+| llama.cpp decode | 181 token/s | 192 token/s | 283 token/s |
+| llama.cpp short translation | 64.4 ms | 61.6 ms | 48.6 ms |
+
+Q8_0 improved Metal decode by about 32% and short translation by about 19%
+relative to BF16 in this run. Q4_0 currently reduces storage without improving
+Metal decode; its decode performance remains below llama.cpp's Q4_0 kernel.
+The earlier timer/workload caveats apply, and other CPU work was present.
+llama.cpp used the same pinned checkpoint, `--pure` Q8_0/Q4_0 quantization,
+Float32 KV and the earlier command settings. Payload and scale comparisons
+matched all 66 matrices after accounting for the different internal layout.
+
+All three produced `会議は10時に始まります。` for the short prompt. Q8_0's output
+matched BF16 on all eight examples. Q4_0 matched six; the other two changed
+wording, including `検証ステップをスキップするには...` to
+`` `check=false` を設定してバリデーションステップをスキップします。 ``.
+These string matches do not establish quality preservation for other inputs.
+
+| Model memory and setup | BF16 | Q8_0 | Q4_0 |
+| --- | ---: | ---: | ---: |
+| GPU array payloads, including Float32 prefill cache | 3.745 GiB | 2.968 GiB | 2.553 GiB |
+| Separate-process peak RSS | 5.290 GiB | 3.864 GiB | 3.648 GiB |
+| Model setup in those separate processes | 2.78 s | 4.96 s | 5.09 s |
+
+GPU payloads sum the model's arrays; they exclude request KV/workspace,
+allocator padding and transient allocations. Peak RSS was measured with macOS
+`/usr/bin/time -l` in separate runs of `compare_storage.jl <format>` with one
+repetition. It includes compilation/mapped memory and is not a Metal-device
+allocation measurement. Setup excludes package import but includes checkpoint
+loading, quantization, cache creation and synchronization, with the checkpoint
+already in the filesystem cache. First-inference compilation is separate.
+
+Warm allocation diagnostics retained zero GPU buffer-creation API calls per
+decode and three per 128-token prefill for both quantized formats. Julia host
+allocation was 96,400 bytes/token for Q8_0 and 96,368 for Q4_0, compared with
+93,232 for BF16. This remains an allocating host path.
+
+For corresponding llama.cpp assets:
+
+```sh
+cmake --build build --target llama-quantize llama-bench llama-completion -j 8
+build/bin/llama-quantize --pure model-bf16.gguf model-q8.gguf Q8_0 4
+build/bin/llama-quantize --pure model-bf16.gguf model-q4.gguf Q4_0 4
+# Repeat the earlier inference and translation commands for each model file.
+```
+
+The [recorded samples and outputs](results/metal-storage-m2max-2026-11-07.json)
+include the model revision, conditions, llama.cpp comparison, array payloads,
+separate-process RSS, setup times and allocation measurements.

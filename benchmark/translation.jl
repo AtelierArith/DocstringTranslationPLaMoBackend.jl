@@ -12,12 +12,14 @@ const P = B.PLaMo
 function main()
     device = Symbol(get(ENV, "PLAMO_BENCH_DEVICE", "cpu"))
     device in (:cpu, :metal) || throw(ArgumentError("device must be cpu or metal"))
+    storage = Symbol(get(ENV, "PLAMO_BENCH_STORAGE", "bf16"))
     prefill = Symbol(get(ENV, "PLAMO_BENCH_PREFILL", "auto"))
     repetitions = parse(Int, get(ENV, "PLAMO_BENCH_REPETITIONS", "5"))
     repetitions > 0 || throw(ArgumentError("repetitions must be positive"))
     source = isempty(ARGS) ? "The meeting starts at ten." : join(ARGS, " ")
     B.configure_plamo!(;
         device,
+        weight_storage = storage,
         prefill_storage = prefill,
         context_size = 512,
         max_tokens = 32,

@@ -89,14 +89,16 @@ end
 function main()
     directory = Backend.model_directory()
     Backend.verify_model(directory)
+    storage = Symbol(get(ENV, "PLAMO_ALLOC_STORAGE", "bf16"))
+    storage in (:bf16, :f32, :q8_0, :q4_0) || error("unknown weight storage")
     hybrid = GPU.use_hybrid_prefill(
-        :bf16,
+        storage,
         :auto,
         Metal.free_memory(),
         Sys.free_memory(),
         GPU.kv_cache_bytes(directory, 512),
     )
-    model = GPU.MetalModel(directory; context_size = 512, weight_storage = :bf16, hybrid)
+    model = GPU.MetalModel(directory; context_size = 512, weight_storage = storage, hybrid)
     state = GPU.MetalState(model, 512)
     ids = fill(0, 128)
     GPU.forward_gpu!(model, ids, state; token_only = true)
@@ -107,6 +109,8 @@ function main()
         pkgversion(Metal),
         "; AllocCheck ",
         pkgversion(AllocCheck),
+        "; weight_storage=",
+        storage,
         "; hybrid_prefill=",
         hybrid,
     )
