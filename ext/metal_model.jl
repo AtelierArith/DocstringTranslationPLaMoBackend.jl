@@ -27,6 +27,9 @@ struct MetalModel{W,V,L}
     capacity::Int
 end
 
+expanded_prefill_weight(weight::QuantizedMatrix) = dequantize_gpu(weight)
+expanded_prefill_weight(weight) = Float32.(weight)
+
 function MetalModel(
     directory;
     context_size::Int = 4096,
@@ -34,11 +37,11 @@ function MetalModel(
     hybrid::Bool = false,
 )
     1 <= context_size <= 32768 || throw(ArgumentError("context_size must be 1..32768"))
-    weight_storage in (:bf16, :f32) ||
-        throw(ArgumentError("weight_storage must be :bf16 or :f32"))
+    weight_storage in (:bf16, :f32, :q8_0, :q4_0) ||
+        throw(ArgumentError("weight_storage must be :bf16, :f32, :q8_0 or :q4_0"))
     c = P.ModelConfig(P.JSON.parsefile(joinpath(directory, "config.json")))
     dtypes = Dict{String,String}()
-    weights = P.checkpoint_weights(directory; dtypes, keep_bf16 = weight_storage === :bf16)
+    weights = P.checkpoint_weights(directory; dtypes, keep_bf16 = weight_storage !== :f32)
     function takeweight(name, shape)
         key = name * ".weight"
         value = pop!(weights, key, nothing)
@@ -52,6 +55,9 @@ function MetalModel(
         if weight_storage === :bf16
             eltype(value) === UInt16 || throw(ArgumentError("$name is not BF16"))
             return MtlArray(reinterpret(Metal.BFloat16, value))
+        elseif weight_storage in (:q8_0, :q4_0)
+            eltype(value) === UInt16 || throw(ArgumentError("$name is not BF16"))
+            return quantize_matrix(value, weight_storage === :q8_0 ? Val(8) : Val(4))
         end
         return MtlArray(value)
     end
@@ -66,8 +72,8 @@ function MetalModel(
         gate_up = matrix(prefix * ".mlp.gate_up_proj", c.hidden, 2c.intermediate)
         down = matrix(prefix * ".mlp.down_proj", c.intermediate, c.hidden)
         prefill =
-            hybrid && weight_storage === :bf16 ?
-            (Float32.(qkv), Float32.(out), Float32.(gate_up), Float32.(down)) : nothing
+            hybrid && weight_storage !== :f32 ?
+            map(expanded_prefill_weight, (qkv, out, gate_up, down)) : nothing
         MetalLayer(
             qkv,
             out,
@@ -719,7 +725,7 @@ function use_hybrid_prefill(
     system_free,
     cache_bytes,
 )
-    weight_storage === :bf16 || return false
+    weight_storage in (:bf16, :q8_0, :q4_0) || return false
     prefill_storage === :f32 && return true
     prefill_storage === :auto || return false
     # Includes the BF16 model, expanded prefill weights, host-side loading,

@@ -97,11 +97,14 @@ end
 
 Configure native Julia inference. The model stays in Scratch and loads lazily;
 changing settings releases the cached translator. `:bf16` retains original BF16
-weights; `:f32` uses expanded Float32 weights. `device=:auto` uses Metal when
+weights; `:f32` uses expanded Float32 weights. Metal also supports optional
+`:q8_0` and `:q4_0` block quantization; these can change translation output.
+`device=:auto` uses Metal when
 Metal.jl has been loaded and a compatible GPU is available, otherwise it uses
 CPU. Use `device=:cpu` or `device=:metal` for explicit selection. On Metal,
 `prefill_storage=:f32` caches expanded weights for faster prefill;
-`:bf16` saves memory, and `:auto` checks available GPU and system memory.
+`:native` disables this cache (`:bf16` is a compatibility alias), and `:auto`
+checks available GPU and system memory.
 `prefill_storage` has no effect when `weight_storage=:f32`.
 Truncated
 translations raise an error rather than being cached as complete documentation.
@@ -116,12 +119,15 @@ function configure_plamo!(;
     1 <= context_size <= 32768 || throw(ArgumentError("context_size must be 1..32768"))
     1 <= max_tokens < context_size ||
         throw(ArgumentError("max_tokens must be positive and smaller than context_size"))
-    weight_storage in (:bf16, :f32) ||
-        throw(ArgumentError("weight_storage must be :bf16 or :f32"))
+    weight_storage in (:bf16, :f32, :q8_0, :q4_0) ||
+        throw(ArgumentError("weight_storage must be :bf16, :f32, :q8_0 or :q4_0"))
     device in (:auto, :cpu, :metal) ||
         throw(ArgumentError("device must be :auto, :cpu or :metal"))
-    prefill_storage in (:auto, :bf16, :f32) ||
-        throw(ArgumentError("prefill_storage must be :auto, :bf16 or :f32"))
+    device === :cpu &&
+        weight_storage in (:q8_0, :q4_0) &&
+        throw(ArgumentError("quantized weight storage requires Metal inference"))
+    prefill_storage in (:auto, :bf16, :native, :f32) ||
+        throw(ArgumentError("prefill_storage must be :auto, :native, :bf16 or :f32"))
     lock(MODEL_LOCK) do
         MODEL_OPTIONS[] = (
             context_size = Int(context_size),
@@ -157,6 +163,11 @@ function native_translator()
                 throw(ArgumentError("Metal inference requires loading Metal.jl first"))
             NATIVE_TRANSLATOR[] = metal_translator(directory, options)
         else
+            options.weight_storage in (:q8_0, :q4_0) && throw(
+                ArgumentError(
+                    "quantized weight storage requires loading Metal.jl and a supported GPU",
+                ),
+            )
             NATIVE_TRANSLATOR[] = PLaMo.Translator(
                 directory;
                 context_size = options.context_size,

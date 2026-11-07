@@ -33,6 +33,11 @@ const Native = B.PLaMo
     @test_throws ArgumentError configure_plamo!(; max_tokens = 0)
     @test_throws ArgumentError configure_plamo!(; context_size = 128, max_tokens = 128)
     @test_throws ArgumentError configure_plamo!(; weight_storage = :f16)
+    for storage in (:q8_0, :q4_0)
+        configure_plamo!(; device = :metal, weight_storage = storage, prefill_storage = :native)
+        @test B.MODEL_OPTIONS[].weight_storage === storage
+        @test_throws ArgumentError configure_plamo!(; device = :cpu, weight_storage = storage)
+    end
     configure_plamo!()
     @testset "Inference device selection" begin
         configure_plamo!(; device = :cpu)

@@ -16,8 +16,8 @@ function run_benchmark(prompt_tokens, generated_tokens, repetitions)
     directory = DocstringTranslationPLaMoBackend.model_directory()
     DocstringTranslationPLaMoBackend.verify_model(directory)
     storage = Symbol(get(ENV, "PLAMO_BENCH_STORAGE", "bf16"))
-    storage in (:bf16, :f32) ||
-        throw(ArgumentError("PLAMO_BENCH_STORAGE must be bf16 or f32"))
+    storage in (:bf16, :f32, :q8_0, :q4_0) ||
+        throw(ArgumentError("PLAMO_BENCH_STORAGE must be bf16, f32, q8_0 or q4_0"))
     output_mode = get(ENV, "PLAMO_BENCH_OUTPUT", "logits")
     output_mode in ("logits", "token") ||
         throw(ArgumentError("PLAMO_BENCH_OUTPUT must be logits or token"))
@@ -30,8 +30,8 @@ function run_benchmark(prompt_tokens, generated_tokens, repetitions)
             :DocstringTranslationPLaMoBackendMetalExt,
         )
         prefill = Symbol(get(ENV, "PLAMO_BENCH_PREFILL", "auto"))
-        prefill in (:auto, :bf16, :f32) ||
-            throw(ArgumentError("PLAMO_BENCH_PREFILL must be auto, bf16 or f32"))
+        prefill in (:auto, :bf16, :native, :f32) ||
+            throw(ArgumentError("PLAMO_BENCH_PREFILL must be auto, native, bf16 or f32"))
         cache_bytes = metal.kv_cache_bytes(directory, prompt_tokens + generated_tokens)
         hybrid = metal.use_hybrid_prefill(
             storage,
@@ -52,6 +52,8 @@ function run_benchmark(prompt_tokens, generated_tokens, repetitions)
             (ids, state) ->
                 metal.forward_gpu!(model, ids, state; token_only = output_mode == "token")
     else
+        storage in (:q8_0, :q4_0) &&
+            throw(ArgumentError("quantized storage requires Metal"))
         model = P.Translator(
             directory;
             context_size = prompt_tokens + generated_tokens,
