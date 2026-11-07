@@ -1,3 +1,34 @@
+function decode_divide_kernel!(output, divisor)
+    @inbounds output[1] = Int32(1) ÷ divisor[1]
+    return
+end
+
+@testset "Decode GPU diagnostics" begin
+    level = M.decode_debug_level()
+    @test level == (Base.JLOptions().debug_level >= 2 ? 2 : 0)
+    output = Metal.zeros(Int32, 1)
+    divisor = MtlArray(Int32[0])
+    @metal threads=1 debug_level=level decode_divide_kernel!(output, divisor)
+    exception = try
+        Metal.synchronize()
+        nothing
+    catch err
+        err
+    end
+    @test exception isa Metal.KernelException
+    if level == 0 && exception isa Metal.KernelException
+        @test isempty(exception.name)
+        @test isempty(exception.reason)
+    elseif level == 2 && exception isa Metal.KernelException
+        @test !isempty(exception.name)
+        @test !isempty(exception.backtrace)
+    end
+    # A reported exception must not poison later inference launches.
+    copyto!(divisor, Int32[1])
+    @metal threads=1 debug_level=level decode_divide_kernel!(output, divisor)
+    @test Array(output) == Int32[1]
+end
+
 @testset "Masked Q4 matvec" begin
     for width in (32, 64, 1536, 2048, 6144), columns in (4, 8, 12)
         source = repeat(reshape(repeat(Float32.(-8:7), 2*(width÷32)), :, 1), 1, columns)

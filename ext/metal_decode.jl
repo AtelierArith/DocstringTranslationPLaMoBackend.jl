@@ -160,7 +160,7 @@ function projection_gpu!(result, weight::QuantizedMatrix{4}, input)
        length(weight.data) <= typemax(UInt32) &&
        length(weight.scales) <= typemax(UInt32) &&
        width <= typemax(UInt32)
-        @metal threads=32 groups=columns÷4 q4_matvec_masked_kernel!(
+        @metal debug_level=decode_debug_level() threads=32 groups=columns÷4 q4_matvec_masked_kernel!(
             result,
             weight.data,
             weight.scales,

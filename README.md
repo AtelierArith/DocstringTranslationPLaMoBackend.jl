@@ -95,6 +95,11 @@ If you load Metal after the CPU model has already been loaded, call
 selection reports an error if Metal is unavailable. GPU requests and Markdown
 traversal run without Julia thread parallelism; `JULIA_NUM_THREADS=8` is not
 needed for Metal. Metal.jl 1.12 or newer is an optional dependency.
+Decode kernels omit GPU exception details by default while still reporting
+`Metal.KernelException`. Run Julia with `-g2` to retain full device diagnostics.
+This setting does not enable fast math or change inference precision.
+A subsequent Q4 comparison measured 396 token/s versus llama.cpp’s 426 token/s;
+exceeding its default configuration remains an open performance goal.
 
 The GPU path retains the pinned BF16 weights and uses Float32 activations and
 accumulation. For faster prompt processing, `prefill_storage=:auto` additionally

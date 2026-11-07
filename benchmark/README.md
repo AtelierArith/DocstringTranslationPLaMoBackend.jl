@@ -306,3 +306,46 @@ require rebuilding or adapting it. The first comparison uses default Float16 KV
 and automatic Flash Attention; the second uses Float32 KV and Flash Attention on.
 Neither performs greedy sampling in the C++ loop. Use translation benchmarks
 separately to measure sampling, prompt formatting and end-to-end output.
+
+
+### Decode diagnostic overhead
+
+Hot decode kernels use Metal compiler `debug_level=0` by default, preserving
+`Metal.KernelException` signaling without recording exception descriptions.
+Run `julia -g2` to restore device exception types, positions and stack traces.
+The backend queries the process setting at runtime, including when using a
+precompiled package. Arithmetic and bounds checks are unchanged; this does not
+enable fast math. A regression test checks division-by-zero detection and a
+successful GPU launch immediately after the reported exception. The focused
+kernel suite also passes under `julia -g2`, including nonempty exception type
+and backtrace checks. To exercise both policies:
+
+```sh
+julia --project=test/metal test/metal.jl
+julia -g2 --project=test/metal test/metal.jl
+```
+
+
+With this setting, a fresh eleven-sample alternating run measured Q4 decode
+medians of **396.4 token/s for Julia and 426.3 token/s for llama.cpp** with its
+default Float16 KV / automatic Flash Attention. Julia remains about 7% behind
+that reference (it needs about 7.5% more throughput to match it). With Float32 KV
+and Flash Attention enabled in llama.cpp, the medians were 394.1 versus 389.9.
+The default comparison remains the performance target; the Float32-KV result
+does not establish overall superiority. The earlier four-format table retains
+its original measurements.
+[Raw samples](results/metal-llama-debug0-m2max-2026-11-07.json) use the same
+checkpoint, bridge, context, token IDs, synchronization and sampling scopes as
+above. CPU `-O3`, global fast math and reduced activation/KV precision are not
+part of this change.
+
+
+The updated Q4 diagnostic run reports 90,720 warm host bytes/token (previously
+89,936), zero GPU buffer-creation calls per decode, and 2,485 AllocCheck potential
+findings including 236 unresolved dispatches. Runtime/compiler paths are included;
+these static counts are not executed allocation counts. The 784-byte host increase
+is retained alongside the measured throughput improvement. Standard CPU tests,
+real-model BF16/Float32/quantized comparisons, long-context checks and both GPU
+diagnostic levels passed. The automatic Float32-prefill-cache test was skipped
+in the full run because available memory was below its threshold; the explicit
+Q4/Q8 cache-enabled model tests passed separately.

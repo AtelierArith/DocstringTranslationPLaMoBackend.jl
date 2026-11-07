@@ -617,7 +617,7 @@ function forward_decode_gpu!(
     pos = state.position
     ws = state.workspace
     qdim, kdim = c.heads * c.head_dim, c.kv_heads * c.head_dim
-    @metal threads=256 groups=cld(c.hidden, 256) embedding_decode_kernel!(
+    @metal debug_level=decode_debug_level() threads=256 groups=cld(c.hidden, 256) embedding_decode_kernel!(
         ws.hidden,
         m.embedding,
         token,
@@ -685,7 +685,7 @@ function forward_decode_gpu!(
             c.eps,
         )
         projection_gpu!(ws.gate_up, layer.gate_up, ws.normalized)
-        @metal threads=256 groups=cld(c.intermediate, 256) activate_gate_kernel!(
+        @metal debug_level=decode_debug_level() threads=256 groups=cld(c.intermediate, 256) activate_gate_kernel!(
             ws.gate,
             ws.gate_up,
             c.intermediate,

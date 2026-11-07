@@ -4,6 +4,11 @@ using DocstringTranslationPLaMoBackend
 using Metal
 using LinearAlgebra
 
+# Device exceptions still signal KernelException at level 0. Avoid recording
+# diagnostic strings on every decode launch; `julia -g2` restores full details.
+# Query at runtime so precompilation cannot freeze the caller's debug setting.
+@inline decode_debug_level() = Base.JLOptions().debug_level >= 2 ? 2 : 0
+
 
 # Apple GPU family 7 introduced native SIMD reductions. The family is a GPU
 # compile-time constant, so older targets retain only the shuffle fallback.
@@ -55,7 +60,7 @@ function rms_norm_gpu!(output, x, weight, eps; residual = nothing)
     if size(x, 2) == 1 &&
        vector_norm_eligible(size(x, 1), output, x, weight) &&
        (isnothing(residual) || vector_norm_eligible(size(x, 1), residual))
-        @metal threads=256 groups=1 u32_first_rms_kernel!(
+        @metal debug_level=decode_debug_level() threads=256 groups=1 u32_first_rms_kernel!(
             output,
             x,
             weight,
@@ -65,7 +70,7 @@ function rms_norm_gpu!(output, x, weight, eps; residual = nothing)
         )
         return output
     end
-    @metal threads=128 groups=cld(size(x, 2), 4) rms_kernel!(
+    @metal debug_level=decode_debug_level() threads=128 groups=cld(size(x, 2), 4) rms_kernel!(
         output,
         x,
         weight,
@@ -140,7 +145,7 @@ function dual_rms_gpu!(output, normalized, input, residual, post_weight, pre_wei
         post_weight,
         pre_weight,
     )
-        @metal threads=256 groups=1 u32_vector_dual_rms_kernel!(
+        @metal debug_level=decode_debug_level() threads=256 groups=1 u32_vector_dual_rms_kernel!(
             output,
             normalized,
             input,
@@ -153,7 +158,7 @@ function dual_rms_gpu!(output, normalized, input, residual, post_weight, pre_wei
         )
         return output, normalized
     end
-    @metal threads=256 groups=size(input, 2) dual_rms_kernel!(
+    @metal debug_level=decode_debug_level() threads=256 groups=size(input, 2) dual_rms_kernel!(
         output,
         normalized,
         input,
@@ -298,7 +303,7 @@ function rotate_qk_gpu!(
         keys,
         values,
     )
-        @metal threads=128 groups=cld((qheads + kheads) * count, 4) u32_rotate_qk_kernel!(
+        @metal debug_level=decode_debug_level() threads=128 groups=cld((qheads + kheads) * count, 4) u32_rotate_qk_kernel!(
             qkv,
             keys,
             values,
@@ -315,7 +320,7 @@ function rotate_qk_gpu!(
         )
         return qkv
     end
-    @metal threads=128 groups=cld((qheads + kheads) * count, 4) rotate_qk_kernel!(
+    @metal debug_level=decode_debug_level() threads=128 groups=cld((qheads + kheads) * count, 4) rotate_qk_kernel!(
         qkv,
         keys,
         values,
@@ -565,7 +570,7 @@ function launch_single_attention!(
         heads,
         kv_heads,
     )
-        @metal threads=128 groups=heads*parts attention128_kernel!(
+        @metal debug_level=decode_debug_level() threads=128 groups=heads*parts attention128_kernel!(
             storage,
             query,
             keys,
@@ -581,7 +586,7 @@ function launch_single_attention!(
         )
         return nothing
     end
-    @metal threads=128 groups=heads*parts single_attention_kernel!(
+    @metal debug_level=decode_debug_level() threads=128 groups=heads*parts single_attention_kernel!(
         storage,
         query,
         keys,
@@ -649,7 +654,7 @@ function single_attention_gpu!(
            ) &&
            output isa MtlArray{Float32} &&
            length(output) <= typemax(UInt32)
-            @metal threads=256 groups=cld(dim*heads, 256) u32_merge_attention_kernel!(
+            @metal debug_level=decode_debug_level() threads=256 groups=cld(dim*heads, 256) u32_merge_attention_kernel!(
                 output,
                 storage,
                 UInt32(dim),
@@ -657,7 +662,7 @@ function single_attention_gpu!(
                 UInt32(parts),
             )
         else
-            @metal threads=256 groups=cld(dim*heads, 256) merge_attention_kernel!(
+            @metal debug_level=decode_debug_level() threads=256 groups=cld(dim*heads, 256) merge_attention_kernel!(
                 output,
                 storage,
                 dim,
