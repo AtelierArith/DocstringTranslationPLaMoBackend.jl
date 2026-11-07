@@ -2,11 +2,11 @@
 
 Julia の docstring と Documenter ページを、同梱した **PLaMo.jl のネイティブ Julia 実装**で翻訳します。Python・Conda・`plamo-translate` CLI は不要です。
 
-This package translates Julia docstrings and Documenter pages using native Julia PLaMo inference. The PLaMo implementation is included in `src/PLaMo.jl` and `src/julia/`; installation does not require access to its private upstream repository. Model assets are cached with Scratch.jl, and one lazily loaded model is reused across translations.
+PLaMo の実装は `src/PLaMo.jl` と `src/julia/` に同梱しているため、インストール時に非公開の upstream リポジトリへアクセスする必要はありません。モデルのアセットは Scratch.jl でキャッシュされ、遅延ロードされた 1 つのモデルをすべての翻訳で使い回します。
 
-## Setup
+## セットアップ
 
-Julia **1.13 or newer** is required.
+Julia **1.13 以降**が必要です。
 
 ```sh
 git clone https://github.com/AtelierArith/DocstringTranslationPLaMoBackend.jl.git
@@ -19,15 +19,15 @@ julia --threads=8 --project
 ```julia
 using DocstringTranslationPLaMoBackend
 
-@switchlang! :Japanese # :ja and "ja" also work
+@switchlang! :Japanese # :ja や "ja" も使えます
 @doc sin
 
-@switchlang! :English # :en and "en" also work
+@switchlang! :English # :en や "en" も使えます
 ```
 
-`@switchlang!` changes `Docs.parsedoc` and `Documenter.Page` for the current Julia process, as in the original package. Call it from your REPL or documentation build script, rather than during another package's precompilation. Already parsed docstrings can switch languages; the original Markdown remains available. Fenced Julia examples are not sent for translation.
+`@switchlang!` は、元のパッケージと同様に、現在の Julia プロセスの `Docs.parsedoc` と `Documenter.Page` を切り替えます。他のパッケージのプリコンパイル中ではなく、REPL やドキュメントのビルドスクリプトから呼び出してください。パース済みの docstring も言語を切り替えられ、元の Markdown も引き続き参照できます。Julia のコードブロック（フェンス付き）は翻訳に送られません。
 
-## Model cache: Scratch.jl
+## モデルキャッシュ: Scratch.jl
 
 ```julia
 using DocstringTranslationPLaMoBackend
@@ -36,125 +36,90 @@ install_model!()
 DocstringTranslationPLaMoBackend.model_directory()
 ```
 
-`Pkg.build("DocstringTranslationPLaMoBackend")` installs the model automatically.
-Julia may also run this build step when the package is first installed or instantiated.
-The installer downloads **PLaMo 3 Translate 0.8B**, pinned to model revision
-`cc8e88169807d5a272e8ff06db12eb0129b67f81`, using Julia's `Downloads` stdlib. Each asset is checked against its recorded SHA-256 before atomic replacement. Subsequent installs reuse valid files and repair missing or corrupted files.
+`Pkg.build("DocstringTranslationPLaMoBackend")` を実行すると、モデルが自動でインストールされます。
+パッケージの初回インストール時や instantiate 時にも、Julia がこのビルドを実行することがあります。
+インストーラーは、モデルリビジョン `cc8e88169807d5a272e8ff06db12eb0129b67f81` に固定した **PLaMo 3 Translate 0.8B** を、Julia の標準ライブラリ `Downloads` でダウンロードします。各アセットは記録済みの SHA-256 と照合してから、アトミックに置き換えられます。2 回目以降のインストールでは、正しいファイルは再利用し、欠けているファイルや壊れているファイルだけを修復します。
 
-The model directory is managed by Scratch.jl under this package's UUID. With the default depot it resembles:
+モデルのディレクトリは、このパッケージの UUID の下で Scratch.jl が管理します。デフォルトの depot では次のような場所になります。
 
 ```text
 ~/.julia/scratchspaces/691b352d-20d8-448b-9a22-61c32af05849/plamo-3-translate-0.8b-<revision>/
 ```
 
-It follows Julia's depot configuration; no model weights are stored in this repository, the package installation directory, or the working directory. Importing the package creates its Scratch directories but does not download or load the model. The build installs the assets; the model itself is loaded lazily on the first translation. You can also run `install_model!()` explicitly to install or repair the cache.
+この場所は Julia の depot 設定に従います。モデルの重みは、このリポジトリ・パッケージのインストール先・作業ディレクトリのいずれにも保存されません。パッケージを import すると Scratch ディレクトリは作成されますが、モデルのダウンロードやロードは行われません。アセットはビルド時にインストールされ、モデル本体は最初の翻訳時に遅延ロードされます。キャッシュのインストールや修復は、`install_model!()` を明示的に実行しても行えます。
 
-To copy an existing official checkpoint into the Scratch cache without another download:
+手元にある公式チェックポイントを、再ダウンロードせずに Scratch キャッシュへコピーするには次のようにします。
 
 ```julia
 install_model!(; source_directory="/path/to/plamo-3-translate-0.8b")
 ```
 
-To use an existing checkpoint during the automatic build, set
-`PLAMO_SOURCE_DIR` before instantiation or building:
+自動ビルドで既存のチェックポイントを使うには、instantiate またはビルドの前に `PLAMO_SOURCE_DIR` を設定します。
 
 ```sh
 PLAMO_SOURCE_DIR=/path/to/plamo-3-translate-0.8b \
   julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.build("DocstringTranslationPLaMoBackend")'
 ```
 
-The imported files must match the pinned official revision, including both license files. They are verified and copied; the external directory does not become the runtime model location.
+取り込むファイルは、2 つのライセンスファイルも含めて、固定した公式リビジョンと一致している必要があります。ファイルは検証してからコピーされ、外部のディレクトリが実行時のモデルの場所になることはありません。
 
-The downloaded assets occupy about **1.78 GB**. The default BF16 implementation retains approximately **2.73 GB of weight payload** on an x86 CPU with SSSE3, plus normalization, KV caches, workspace, allocator overhead and load-time temporaries. It keeps original BF16 values and uses F32 arithmetic; dictionary compression is lossless. Other Julia CPU architectures use the portable path, but actual inference has only been validated on Intel CPU.
+ダウンロードされるアセットは約 **1.78 GB** です。デフォルトの BF16 実装では、SSSE3 対応の x86 CPU で約 **2.73 GB の重みデータ**を保持します。これに加えて、正規化パラメータ、KV キャッシュ、作業領域、アロケーターのオーバーヘッド、ロード時の一時領域が必要です。元の BF16 値をそのまま保持して F32 で演算し、辞書圧縮は可逆です。その他の CPU アーキテクチャでは移植性の高い実装を使いますが、実際の推論を検証したのは Intel CPU だけです。
 
-The weights follow the [PLaMo Community License](https://plamo.preferredai.jp/info/plamo-community-license-en), independently of this package's MIT license. The installer also caches the original English and Japanese license files.
+重みには、このパッケージの MIT ライセンスとは別に [PLaMo Community License](https://plamo.preferredai.jp/info/plamo-community-license-en) が適用されます。インストーラーは英語版と日本語版のライセンスファイル原本もキャッシュします。
 
 ## Apple Silicon GPU
 
-On Apple Silicon Macs, translation uses the GPU and Q4_0 weights by default; no
-extra package or `using Metal` is needed:
+Apple Silicon の Mac では、デフォルトで GPU と Q4_0 重みを使って翻訳します。追加のパッケージや `using Metal` は不要です。
 
 ```julia
 using DocstringTranslationPLaMoBackend
 @switchlang! :Japanese
 ```
 
-Metal.jl is a regular dependency, but it is only loaded on Apple Silicon
-(macOS on `aarch64`); other platforms install it without loading it. The default
-`device=:auto` selects Metal when a supported GPU is available and otherwise
-uses the CPU. Use `device=:cpu` to force the CPU. Explicit `:metal` selection
-reports an error if Metal is unavailable. GPU requests and Markdown
-traversal run without Julia thread parallelism; `JULIA_NUM_THREADS=8` is not
-needed for Metal.
-Decode kernels omit GPU exception details by default while still reporting
-`Metal.KernelException`. Run Julia with `-g2` to retain full device diagnostics.
-This setting does not enable fast math or change inference precision.
+Metal.jl は通常の依存パッケージですが、ロードされるのは Apple Silicon（`aarch64` の macOS）の場合だけです。その他のプラットフォームでは、インストールはされてもロードはされません。デフォルトの `device=:auto` は、対応する GPU が使える場合は Metal を、そうでない場合は CPU を選びます。CPU を強制するには `device=:cpu` を指定します。`:metal` を明示した場合、Metal が使えなければエラーになります。GPU へのリクエストと Markdown の走査は Julia のスレッド並列なしで実行されるため、Metal では `JULIA_NUM_THREADS=8` は不要です。
+デコード用カーネルは、`Metal.KernelException` の報告は保ちつつ、デフォルトでは GPU 例外の詳細情報を省略します。デバイスの診断情報をすべて残すには、Julia を `-g2` 付きで起動してください。この設定によって fast math が有効になったり、推論精度が変わったりすることはありません。
 
-With `weight_storage=:bf16`, the GPU path retains the pinned BF16 weights; all
-formats use Float32 activations and accumulation. For faster prompt processing, `prefill_storage=:auto` additionally
-caches Float32 projection weights when the reported GPU and system free memory
-both exceed 8 GiB plus the configured KV-cache capacity. The heuristic includes
-room for loading and temporary buffers but cannot guarantee future memory
-availability. Automatic selection falls back to BF16 if allocation fails.
-This cache adds approximately 2.2 GB of GPU allocations;
-select `configure_plamo!(; device=:metal, prefill_storage=:bf16)` to avoid the
-extra cache, or `:f32` to request it explicitly. When `weight_storage=:f32`,
-all projection weights are already Float32 and no extra copy is needed.
+`weight_storage=:bf16` のとき、GPU 経路は固定した BF16 重みをそのまま保持します。どの形式でも、活性値と累積計算は Float32 です。プロンプト処理を速くするため、`prefill_storage=:auto` は、GPU とシステムの空きメモリがどちらも「8 GiB + 設定した KV キャッシュ容量」を超える場合に、Float32 の射影重みも追加でキャッシュします。このヒューリスティックはロードや一時バッファの余裕を見込んでいますが、将来の空きメモリを保証するものではありません。確保に失敗した場合、自動選択は BF16 にフォールバックします。
+このキャッシュで GPU 上の確保量が約 2.2 GB 増えます。追加のキャッシュを避けるには `configure_plamo!(; device=:metal, prefill_storage=:bf16)` を、明示的に有効にするには `:f32` を指定してください。`weight_storage=:f32` の場合は射影重みがすでにすべて Float32 なので、追加のコピーは作られません。
 
-Results can differ slightly from the CPU due to floating-point operation order.
-The GPU and CPU paths each keep their model and per-request KV cache on the
-selected device; changing settings releases the previous model.
+浮動小数点演算の順序の違いにより、結果が CPU とわずかに異なることがあります。GPU 経路と CPU 経路は、それぞれモデルとリクエストごとの KV キャッシュを選択したデバイス上に保持します。設定を変更すると、以前のモデルは解放されます。
 
-## Inference settings
+## 推論の設定
 
 ```julia
 configure_plamo!(;
-    device=:auto,       # :cpu or :metal can be selected explicitly
-    prefill_storage=:auto, # Metal prompt cache: :bf16 or :f32
+    device=:auto,       # :cpu または :metal を明示的に選べます
+    prefill_storage=:auto, # Metal のプロンプト用キャッシュ: :bf16 または :f32
     context_size=4096,
     max_tokens=1024,
-    weight_storage=:auto, # :q4_0 on Metal, :bf16 on CPU; :f32 uses more memory
+    weight_storage=:auto, # Metal では :q4_0、CPU では :bf16。:f32 はメモリを多く使います
 )
 ```
 
-Metal supports block quantization; `:q4_0` is the Metal default:
+Metal はブロック量子化に対応しており、Metal でのデフォルトは `:q4_0` です。
 
 ```julia
 DocstringTranslationPLaMoBackend.configure_plamo!(
     device=:metal,
-    weight_storage=:q8_0, # or :bf16 to keep the original weights
+    weight_storage=:q8_0, # 元の重みを保つなら :bf16
 )
 ```
 
-These modes quantize the pinned BF16 checkpoint when the translator loads; no
-additional model download or GGUF conversion is needed. The quantized values
-use Q8_0/Q4_0 reference rounding with an internal GPU layout. Quantization can
-change translation output. Activations, KV caches and accumulation remain
-Float32. Quantized storage requires Metal and is not available on CPU.
+これらのモードは、翻訳器のロード時に固定の BF16 チェックポイントを量子化します。追加のモデルダウンロードや GGUF 変換は不要です。量子化値は Q8_0/Q4_0 の参照実装と同じ丸めで計算し、GPU 用の独自レイアウトで保持します。量子化によって翻訳結果が変わることがあります。活性値・KV キャッシュ・累積計算は Float32 のままです。量子化した重みは Metal 専用で、CPU では使えません。
 
-On an M2 Max, the optimized Metal decode path measured about 190 token/s with
-BF16, 246 with Q8_0 and 404 with Q4_0 (Float32: 92), with one Julia thread.
-Q4_0 short translation took about 30 ms. In a separate alternating same-token
-comparison, llama.cpp with default Float16 KV and automatic Flash Attention
-reached about 422 token/s versus Metal.jl's 405; the target of exceeding llama.cpp
-remains unmet (about 4% more throughput is needed).
-These are warm measurements, excluding model loading and compilation. See
-[benchmark details and output differences](benchmark/README.md#register-resident-dual-rms-normalization).
+M2 Max・Julia 1 スレッドでの最適化済み Metal デコードは、BF16 で約 190 token/s、Q8_0 で 246、Q4_0 で 404（Float32 は 92）でした。Q4_0 での短い翻訳は約 30 ms でした。同じトークン列を交互に実行した別の比較では、デフォルトの Float16 KV と Flash Attention 自動選択を使った llama.cpp が約 422 token/s、Metal.jl が 405 でした。llama.cpp を上回るという目標はまだ達成できていません（約 4% のスループット向上が必要です）。
+いずれもウォーム状態の計測で、モデルのロードとコンパイルは含みません。詳しくは[ベンチマークの詳細と出力の違い](benchmark/README.md#register-resident-dual-rms-normalization)を参照してください。
 
-The expanded prefill cache contains the selected format's dequantized values.
-Set `prefill_storage=:native` to disable the cache; this expands one projection
-at a time during prefill. `:bf16` remains an alias for disabling this cache.
-Quantization is repeated when a new translator is created; it is not persisted
-as a separate Scratch asset. See the benchmark comparison for load-time, memory
-and translation-output tradeoffs.
+展開済みの prefill 用キャッシュには、選択した形式を逆量子化した値が入ります。`prefill_storage=:native` を指定するとこのキャッシュを無効にでき、prefill 中に射影を 1 つずつ展開します。`:bf16` は、このキャッシュを無効にする指定の別名として残しています。
+量子化は翻訳器を作るたびにやり直され、別の Scratch アセットとして保存されることはありません。ロード時間・メモリ・翻訳結果のトレードオフについては、ベンチマークの比較を参照してください。
 
-Changing settings releases the cached translator; the next translation reloads it. `context_size` must accommodate the prompt plus `max_tokens`. Incomplete or empty translations raise an error and are not saved as completed documentation. For longer paragraphs/docstrings, increase both limits, for example `context_size=8192, max_tokens=2048`.
+設定を変更するとキャッシュ済みの翻訳器は解放され、次の翻訳時に再ロードされます。`context_size` は、プロンプトと `max_tokens` の合計を収められる大きさにしてください。不完全な翻訳や空の翻訳はエラーになり、完成したドキュメントとしては保存されません。長い段落や docstring を扱う場合は、たとえば `context_size=8192, max_tokens=2048` のように両方の上限を引き上げてください。
 
-Native requests share one model and are serialized. Markdown traversal and the PLaMo projection kernels can use Julia threads on CPU; Metal traversal is sequential. For CPU tuning you can separately set `LinearAlgebra.BLAS.set_num_threads(1)`; the package does not change global BLAS settings.
+ネイティブのリクエストは 1 つのモデルを共有し、直列に処理されます。CPU では、Markdown の走査と PLaMo の射影カーネルが Julia のスレッドを使えます。Metal では走査は逐次的に行われます。CPU のチューニングとして、別途 `LinearAlgebra.BLAS.set_num_threads(1)` を設定することもできます。このパッケージがグローバルな BLAS 設定を変えることはありません。
 
-## Translation cache and Documenter
+## 翻訳キャッシュと Documenter
 
-Translations also use Scratch.jl, in a separate `translation-plamo3-v3-<model-revision>` cache. Entries are keyed by original Markdown, package/version and normalized language code. The revision/schema namespace avoids mixing previous Python or older traversal results with the new model; old caches are not deleted. Absolute Documenter paths are kept inside Scratch rather than becoming absolute cache destinations.
+翻訳結果も Scratch.jl の別キャッシュ `translation-plamo3-v3-<model-revision>` に保存されます。エントリーは、元の Markdown・パッケージとバージョン・正規化した言語コードをキーにしています。リビジョンとスキーマで名前空間を分けているため、以前の Python 版や古い走査方式の結果が新しいモデルの結果と混ざることはありません。古いキャッシュは削除されません。Documenter の絶対パスは、そのままキャッシュの保存先になることはなく、Scratch 内に収められます。
 
 ```julia
 using DocstringTranslationPLaMoBackend
@@ -165,15 +130,15 @@ DocstringTranslationPLaMoBackend.switchtargetpackage!(MyPackage)
 Documenter.makedocs(; modules=[MyPackage])
 ```
 
-Heading and table prose is translated while preserving heading levels, table alignment and code-only cells. Heading display text retains the original Documenter section ID (including explicit `@id` labels), so references within and across pages continue to resolve. Code blocks remain unchanged. Existing Markdown link protection and its fallback to the original paragraph are retained. Generated translations still need review before publishing documentation.
+見出しと表の文章は、見出しレベル・表の配置・コードだけのセルを保ったまま翻訳されます。見出しの表示テキストは Documenter の元のセクション ID（明示的な `@id` ラベルも含む）を保持するため、ページ内やページ間の参照は引き続き解決されます。コードブロックは変更されません。既存の Markdown リンクの保護と、その際に元の段落へ戻すフォールバックも維持しています。生成された翻訳は、ドキュメントを公開する前に確認が必要です。
 
-## Tests and implementation provenance
+## テストと実装の出自
 
 ```sh
 julia --project -e 'using Pkg; Pkg.test()'
 ```
 
-The normal tests run without downloading a model or starting Python. They cover source integrity, Scratch configuration, checksum validation, atomic installation, offline reuse, language aliases, incomplete-output errors, translation caches, and the docstring/Documenter hooks. To run the optional real-model checks too:
+通常のテストは、モデルのダウンロードも Python の起動もせずに実行できます。対象は、ソースの完全性、Scratch の設定、チェックサム検証、アトミックなインストール、オフラインでの再利用、言語の別名、不完全な出力のエラー、翻訳キャッシュ、docstring と Documenter のフックです。実モデルを使うオプションのチェックも実行するには次のようにします。
 
 ```sh
 PLAMO_SOURCE_DIR=/path/to/plamo-3-translate-0.8b \
@@ -181,29 +146,22 @@ PLAMO_SOURCE_DIR=/path/to/plamo-3-translate-0.8b \
   julia --project -e 'using Pkg; Pkg.test()'
 ```
 
-On Apple Silicon, the Metal-specific tests use a separate environment:
+Apple Silicon では、Metal 固有のテストは別の環境で実行します。
 
 ```sh
 julia --project=test/metal -e 'using Pkg; Pkg.instantiate()'
 julia --project=test/metal test/metal.jl
 PLAMO_METAL_REAL_MODEL=1 julia --project=test/metal test/metal.jl
-# Optional: expanded Float32 CPU/GPU models require substantially more memory.
+# オプション: 展開した Float32 の CPU/GPU モデルは、かなり多くのメモリを必要とします。
 PLAMO_METAL_F32_MODEL=1 julia --project=test/metal test/metal.jl
-# Exercise decode after 2048 cached tokens and the long-context attention path.
+# 2048 トークンをキャッシュした後のデコードと、長いコンテキスト用の attention 経路を確認します。
 PLAMO_METAL_LONG_MODEL=1 julia --project=test/metal test/metal.jl
-# Check Q8_0/Q4_0 against independent Float32 CPU models (needs extra memory).
+# Q8_0/Q4_0 を独立した Float32 の CPU モデルと比較します（追加のメモリが必要です）。
 PLAMO_METAL_QUANT_MODEL=1 JULIA_NUM_THREADS=1 julia --project=test/metal test/metal.jl
 ```
 
-`PLAMO_METAL_REAL_MODEL=1` also checks real-model CPU/GPU logits, the prefill
-chunk boundary, and an end-to-end translation; it needs the cached model. CI runs the
-Metal kernel tests on its macOS runner when a usable GPU is exposed and reports
-a warning when it is not; the real-model check remains an explicit local test.
+`PLAMO_METAL_REAL_MODEL=1` は、実モデルでの CPU/GPU のロジット、prefill のチャンク境界、エンドツーエンドの翻訳も確認します。キャッシュ済みのモデルが必要です。CI は、macOS ランナーで使える GPU がある場合に Metal カーネルのテストを実行し、ない場合は警告を出します。実モデルのチェックは、明示的に実行するローカル専用のテストです。
 
-See [benchmark/README.md](benchmark/README.md) for warm inference benchmarks,
-GPU profiling, AllocCheck-based allocation diagnostics, and measured llama.cpp
-comparisons. On M2 Max, the documented warm workloads reached comparable
-throughput using `JULIA_NUM_THREADS=1` for Metal.
+ウォーム状態の推論ベンチマーク、GPU プロファイリング、AllocCheck によるアロケーション診断、llama.cpp との比較結果については [benchmark/README.md](benchmark/README.md) を参照してください。M2 Max では、記載したウォーム状態のワークロードにおいて、Metal で `JULIA_NUM_THREADS=1` を使い、llama.cpp と同程度のスループットに達しました。
 
-The native sources were copied unchanged from PLaMo.jl at commit
-`e919a8a13e18aa997ee0d7708cd35fdb00812fdc`. See [provenance and update instructions](src/julia/UPSTREAM.md), [source checksums](src/julia/checksums.toml), and the [upstream MIT license](src/julia/LICENSE). Runtime setup uses only registered Julia packages and stdlibs.
+ネイティブ実装のソースは、PLaMo.jl のコミット `e919a8a13e18aa997ee0d7708cd35fdb00812fdc` から無変更でコピーしています。[出自と更新手順](src/julia/UPSTREAM.md)、[ソースのチェックサム](src/julia/checksums.toml)、[upstream の MIT ライセンス](src/julia/LICENSE)を参照してください。実行時のセットアップには、登録済みの Julia パッケージと標準ライブラリだけを使います。
