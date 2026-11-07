@@ -59,12 +59,12 @@ allocation measurements (128-token prompt, request capacity 512):
 | Decode, token result, vector input | 98,096 |
 | Decode, token result, tuple input (production) | 98,032 |
 | Decode, full CPU logits | 534,384 |
-| Prefill, 128 tokens, token result | 397,360 |
+| Prefill, 128 tokens, token result | 397,264 |
 
 Making the split-attention launch types concrete reduced token decode from
 103,408 to 98,032 host bytes/call. The allocation trace attributes most remaining
 bytes to GPU kernel-launch call sites. Reusing prefill intermediates and score
-buffers reduced warm prefill host allocation from 515,696 to 397,360 bytes/call.
+buffers reduced warm prefill host allocation from 515,696 to 397,264 bytes/call.
 The GPU profile observed one `newBufferWithLength:options:` call for warm decode
 and four for warm prefill; the earlier allocating prefill path observed 246.
 The first prefill also allocates its request-owned workspace, which is retained
@@ -110,3 +110,31 @@ The Julia timer excludes tokenization and model loading. `llama-completion`
 reports prompt evaluation, decode, sampling, and total durations separately.
 The two timing scopes are close but not identical, so repeat and report both
 rather than treating a single run as a definitive performance ratio.
+
+## Measured comparison
+
+On 2026-11-07, Apple M2 Max (38 GPU cores, 96 GB), macOS 26.7.1,
+Julia 1.13.3 / Metal 1.12.0, and llama.cpp `fd27b203` produced the following
+warm results. Both used the pinned unquantized BF16 checkpoint and Float32 KV
+cache. Julia used one thread and production token output; llama.cpp used eight
+CPU threads with Metal and flash attention disabled. Metal used its automatic
+Float32 prefill cache. Loading and compilation were excluded.
+
+| Workload | Metal.jl | llama.cpp |
+| --- | ---: | ---: |
+| Prefill, 128 tokens (median, 7 runs) | 4,924 token/s | 4,974 token/s |
+| Decode, 64 tokens after 128 cached tokens (median, 7 runs) | 161 token/s | 158 token/s |
+| Short translation, 21 input / 7 generated tokens (median, 9 runs) | 54.7 ms | 64.2 ms |
+
+Both translations produced `会議は10時に始まります。`. BF16 matrix-vector
+products use packed UInt32 loads with exact BF16-to-Float32 reconstruction;
+Apple GPU family 7 and newer use native SIMD reductions, with shuffle-based
+reductions on older targets. Accumulation stays Float32.
+
+These workloads reached comparable performance in this measurement; this does
+not establish a speed advantage for every prompt length or GPU. The machine
+also had other CPU work, and llama.cpp decode samples ranged from 102 to 173
+token/s. Its arithmetic-mean throughput was 4,809 prefill / 152 decode token/s;
+the table uses sample medians consistently for both implementations. Repeat on
+your target machine using the commands above. The short-translation timers have
+slightly different scopes, as described above.

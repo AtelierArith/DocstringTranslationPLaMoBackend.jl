@@ -174,7 +174,9 @@ Metal kernel tests on its macOS runner when a usable GPU is exposed and reports
 a warning when it is not; the real-model check remains an explicit local test.
 
 See [benchmark/README.md](benchmark/README.md) for warm inference benchmarks,
-GPU profiling, and AllocCheck-based allocation diagnostics in a separate environment.
+GPU profiling, AllocCheck-based allocation diagnostics, and measured llama.cpp
+comparisons. On M2 Max, the documented warm workloads reached comparable
+throughput using `JULIA_NUM_THREADS=1` for Metal.
 
 The native sources were copied unchanged from PLaMo.jl at commit
 `e919a8a13e18aa997ee0d7708cd35fdb00812fdc`. See [provenance and update instructions](src/julia/UPSTREAM.md), [source checksums](src/julia/checksums.toml), and the [upstream MIT license](src/julia/LICENSE). Runtime setup uses only registered Julia packages and stdlibs.
