@@ -99,7 +99,7 @@ function MetalModel(
     )
 end
 
-struct DecodeWorkspace{A}
+struct DecodeWorkspace{A,S}
     hidden::A
     residual::A
     normalized::A
@@ -109,8 +109,9 @@ struct DecodeWorkspace{A}
     gate_up::A
     gate::A
     logits::A
+    attention_partial::S
 end
-function DecodeWorkspace(c)
+function DecodeWorkspace(c, capacity)
     allocate(rows) = MtlArray{Float32}(undef, rows, 1)
     qdim, kdim = c.heads * c.head_dim, c.kv_heads * c.head_dim
     DecodeWorkspace(
@@ -123,6 +124,7 @@ function DecodeWorkspace(c)
         allocate(2c.intermediate),
         allocate(c.intermediate),
         allocate(c.vocabulary),
+        MtlArray{Float32}(undef, c.head_dim+2, c.heads, cld(min(capacity, 2048), 32)),
     )
 end
 
@@ -141,7 +143,7 @@ function MetalState(m::MetalModel, capacity::Int)
         [MtlArray{Float32}(undef, rows, capacity) for _ in m.layers],
         0,
         capacity,
-        DecodeWorkspace(m.config),
+        DecodeWorkspace(m.config, capacity),
     )
 end
 
@@ -499,7 +501,8 @@ function forward_decode_gpu!(
                 c.window,
                 c.head_dim,
                 c.heads,
-                c.kv_heads,
+                c.kv_heads;
+                partial = ws.attention_partial,
             )
         else
             query = @view ws.qkv[1:qdim, :]

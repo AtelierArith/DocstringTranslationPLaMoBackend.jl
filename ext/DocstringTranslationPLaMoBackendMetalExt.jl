@@ -48,7 +48,7 @@ function rms_norm_gpu(x, weight, eps; residual = nothing)
     return rms_norm_gpu!(output, x, weight, eps; residual)
 end
 
-# One SIMD group normalizes a residual branch, adds the skip connection,
+# One threadgroup normalizes a residual branch, adds the skip connection,
 # and prepares the normalized input for the next projection.
 function dual_rms_kernel!(
     output,
@@ -61,16 +61,26 @@ function dual_rms_kernel!(
     width,
 )
     lane = Int(thread_index_in_simdgroup())
+    tid = Int(thread_index_in_threadgroup())
+    simd = Int(simdgroup_index_in_threadgroup())
+    partial = MtlThreadGroupArray(Float32, 8)
     square = 0.0f0
-    for i = lane:32:width
+    for i = tid:256:width
         @inbounds square = muladd(input[i, 1], input[i, 1], square)
     end
     for offset in (16, 8, 4, 2, 1)
         square += simd_shuffle_down(square, offset)
     end
+    lane == 1 && (@inbounds partial[simd] = square)
+    threadgroup_barrier(Metal.MemoryFlagThreadGroup)
+    square = lane <= 8 ? (@inbounds partial[lane]) : 0.0f0
+    for offset in (16, 8, 4, 2, 1)
+        square += simd_shuffle_down(square, offset)
+    end
     scale = inv(sqrt(simd_shuffle(square, 1) / width + eps))
+    threadgroup_barrier(Metal.MemoryFlagThreadGroup)
     square2 = 0.0f0
-    for i = lane:32:width
+    for i = tid:256:width
         @inbounds begin
             value = (input[i, 1] * scale) * post_weight[i] + residual[i, 1]
             output[i, 1] = value
@@ -80,15 +90,21 @@ function dual_rms_kernel!(
     for offset in (16, 8, 4, 2, 1)
         square2 += simd_shuffle_down(square2, offset)
     end
+    lane == 1 && (@inbounds partial[simd] = square2)
+    threadgroup_barrier(Metal.MemoryFlagThreadGroup)
+    square2 = lane <= 8 ? (@inbounds partial[lane]) : 0.0f0
+    for offset in (16, 8, 4, 2, 1)
+        square2 += simd_shuffle_down(square2, offset)
+    end
     scale2 = inv(sqrt(simd_shuffle(square2, 1) / width + eps))
-    for i = lane:32:width
+    for i = tid:256:width
         @inbounds normalized[i, 1] = (output[i, 1] * scale2) * pre_weight[i]
     end
     return
 end
 
 function dual_rms_gpu!(output, normalized, input, residual, post_weight, pre_weight, eps)
-    @metal threads=32 groups=1 dual_rms_kernel!(
+    @metal threads=256 groups=1 dual_rms_kernel!(
         output,
         normalized,
         input,
@@ -327,8 +343,8 @@ function weighted_sum_kernel!(
     return
 end
 
-# One threadgroup per query head. Four SIMD groups calculate keys in parallel;
-# softmax and the value product stay in threadgroup memory during decoding.
+# Each threadgroup owns a query head and, for longer contexts, a 32-key
+# partition. Partial softmax results are merged with their maxima for stability.
 function single_attention_kernel!(
     output,
     query,
@@ -341,13 +357,21 @@ function single_attention_kernel!(
     dim,
     groups,
     nkeys,
-)
+    heads,
+    ::Val{split},
+) where {split}
     tid = Int(thread_index_in_threadgroup())
     lane = Int(thread_index_in_simdgroup())
     simd = Int(simdgroup_index_in_threadgroup())
-    head = Int(threadgroup_position_in_grid_1d()) - 1
+    group = Int(threadgroup_position_in_grid_1d()) - 1
+    head = split ? group % heads : group
+    part = split ? group ÷ heads + 1 : 1
+    if split
+        nkeys = min(32, nkeys - (part - 1) * 32)
+        start += (part - 1) * 32
+    end
     kv = head ÷ groups
-    scores = MtlThreadGroupArray(Float32, 2048)
+    scores = MtlThreadGroupArray(Float32, split ? 32 : 2048)
     scratch = MtlThreadGroupArray(Float32, 4)
     for key = simd:4:nkeys
         kp = start + key - 1
@@ -388,7 +412,7 @@ function single_attention_kernel!(
     total = 0.0f0
     for key = tid:128:nkeys
         @inbounds begin
-            value = exp(scores[key] - maximum_value)
+            value = maximum_value == -Inf32 ? 0.0f0 : exp(scores[key] - maximum_value)
             scores[key] = value
             total += value
         end
@@ -407,14 +431,45 @@ function single_attention_kernel!(
     end
     threadgroup_barrier(Metal.MemoryFlagThreadGroup)
     @inbounds total = scratch[1]
+    if split && tid == 1
+        @inbounds begin
+            output[dim+1, head+1, part] = maximum_value
+            output[dim+2, head+1, part] = total
+        end
+    end
     for feature = tid:128:dim
         value = 0.0f0
         for key = 1:nkeys
             @inbounds value =
                 muladd(scores[key], values[kv*dim+feature, start+key-1], value)
         end
-        @inbounds output[head*dim+feature, 1] = value / total
+        @inbounds if split
+            output[feature, head+1, part] = value
+        else
+            output[head*dim+feature, 1] = value / total
+        end
     end
+    return
+end
+
+function merge_attention_kernel!(output, partial, dim, heads, parts)
+    tid = Int(thread_position_in_grid_1d())
+    tid > dim * heads && return
+    feature = (tid - 1) % dim + 1
+    head = (tid - 1) ÷ dim + 1
+    maximum_value = -Inf32
+    for part = 1:parts
+        @inbounds maximum_value = max(maximum_value, partial[dim+1, head, part])
+    end
+    numerator = denominator = 0.0f0
+    for part = 1:parts
+        @inbounds begin
+            factor = exp(partial[dim+1, head, part] - maximum_value)
+            numerator = muladd(factor, partial[feature, head, part], numerator)
+            denominator = muladd(factor, partial[dim+2, head, part], denominator)
+        end
+    end
+    @inbounds output[tid] = numerator / denominator
     return
 end
 
@@ -429,12 +484,19 @@ function single_attention_gpu!(
     window,
     dim,
     heads,
-    kv_heads,
+    kv_heads;
+    partial = nothing,
 )
     nkeys = position + 2 - start
     1 <= nkeys <= 2048 || throw(ArgumentError("single attention supports 1..2048 keys"))
-    @metal threads=128 groups=heads single_attention_kernel!(
-        output,
+    split = nkeys > 32
+    parts = split ? cld(nkeys, 32) : 1
+    storage =
+        split ?
+        (isnothing(partial) ? MtlArray{Float32}(undef, dim+2, heads, parts) : partial) :
+        output
+    @metal threads=128 groups=heads*parts single_attention_kernel!(
+        storage,
         query,
         keys,
         values,
@@ -445,7 +507,18 @@ function single_attention_gpu!(
         dim,
         heads ÷ kv_heads,
         nkeys,
+        heads,
+        Val(split),
     )
+    if split
+        @metal threads=256 groups=cld(dim*heads, 256) merge_attention_kernel!(
+            output,
+            storage,
+            dim,
+            heads,
+            parts,
+        )
+    end
     return output
 end
 
