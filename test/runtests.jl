@@ -26,7 +26,7 @@ const Native = B.PLaMo
     @test !haskey(project["deps"], "CondaPkg")
     @test !isfile(joinpath(pkgdir(B), "CondaPkg.toml"))
     configure_plamo!(; context_size = 512, max_tokens = 32, weight_storage = :f32)
-    @test B.MODEL_OPTIONS[] == (context_size = 512, max_tokens = 32, weight_storage = :f32)
+    @test B.MODEL_OPTIONS[] == (context_size = 512, max_tokens = 32, weight_storage = :f32, device = :auto, prefill_storage = :auto)
     @test isnothing(B.NATIVE_TRANSLATOR[])
     @test_throws ArgumentError configure_plamo!(; context_size = 0)
     @test_throws ArgumentError configure_plamo!(; context_size = 32769)
@@ -34,6 +34,27 @@ const Native = B.PLaMo
     @test_throws ArgumentError configure_plamo!(; context_size = 128, max_tokens = 128)
     @test_throws ArgumentError configure_plamo!(; weight_storage = :f16)
     configure_plamo!()
+    @testset "Inference device selection" begin
+        configure_plamo!(; device = :cpu)
+        @test B.MODEL_OPTIONS[].device === :cpu
+        configure_plamo!(; device = :auto)
+        @test B.MODEL_OPTIONS[].device === :auto
+        configure_plamo!(; device = :metal)
+        @test B.MODEL_OPTIONS[].device === :metal
+        configure_plamo!(; device = :metal, prefill_storage = :f32)
+        @test B.MODEL_OPTIONS[].prefill_storage === :f32
+        configure_plamo!(; device = :metal, prefill_storage = :bf16)
+        @test B.MODEL_OPTIONS[].prefill_storage === :bf16
+        @test_throws ArgumentError configure_plamo!(; prefill_storage = :f16)
+        caller_thread = Threads.threadid()
+        observed_threads = Vector{Int}(undef, 32)
+        B.foreach_translation(1:32) do index
+            observed_threads[index] = Threads.threadid()
+        end
+        @test all(==(caller_thread), observed_threads)
+        @test_throws ArgumentError configure_plamo!(; device = :cuda)
+        configure_plamo!()
+    end
 end
 
 @testset "Language compatibility and native request contract" begin
@@ -64,6 +85,31 @@ end
     code = "```julia\nx = sin(1.0)\n```"
     @test occursin("x = sin(1.0)", string(B.translate_docstring_with_plamo(code)))
     @test isnothing(B.NATIVE_TRANSLATOR[])
+end
+
+@testset "Build accepts an offline model source" begin
+    mktempdir() do directory
+        stub = joinpath(directory, "DocstringTranslationPLaMoBackend", "src")
+        mkpath(stub)
+        write(joinpath(stub, "DocstringTranslationPLaMoBackend.jl"), """
+            module DocstringTranslationPLaMoBackend
+            export install_model!
+            function install_model!(; source_directory = nothing)
+                write(ENV["PLAMO_BUILD_MARKER"], string(source_directory))
+                return "cache"
+            end
+            end
+            """)
+        marker = joinpath(directory, "source-used")
+        source = joinpath(directory, "offline-checkpoint")
+        env = copy(ENV)
+        env["JULIA_LOAD_PATH"] = directory * (Sys.iswindows() ? ";" : ":") * "@stdlib"
+        env["PLAMO_SOURCE_DIR"] = source
+        env["PLAMO_BUILD_MARKER"] = marker
+        build = joinpath(pkgdir(B), "deps", "build.jl")
+        run(pipeline(setenv(`$(Base.julia_cmd()) --startup-file=no $build`, env); stdout = devnull))
+        @test read(marker, String) == source
+    end
 end
 
 @testset "Verified model cache, offline reuse and atomic recovery" begin

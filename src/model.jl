@@ -10,8 +10,20 @@ const MODEL_ASSETS = (
     "model.safetensors" => "7c9f0066d166c075bdbe83ada3d444e08bd7a6ee3f345f47a1f3c442aa6898c5",
 )
 const MODEL_LOCK = ReentrantLock()
-const NATIVE_TRANSLATOR = Ref{Union{Nothing,PLaMo.Translator}}(nothing)
-const MODEL_OPTIONS = Ref((context_size = 4096, max_tokens = 1024, weight_storage = :bf16))
+abstract type AbstractMetalTranslator end
+const NATIVE_TRANSLATOR =
+    Ref{Union{Nothing,PLaMo.Translator,AbstractMetalTranslator}}(nothing)
+const MODEL_OPTIONS = Ref((
+    context_size = 4096,
+    max_tokens = 1024,
+    weight_storage = :bf16,
+    device = :auto,
+    prefill_storage = :auto,
+))
+
+# Implemented by the optional Metal extension when Metal.jl is loaded.
+function metal_translator end
+function metal_available end
 
 """Return the revision-specific model cache managed by Scratch.jl."""
 model_directory() = MODEL_CACHE_DIR[]
@@ -81,32 +93,57 @@ function install_model!(; source_directory::Union{Nothing,AbstractString} = noth
 end
 
 """
-    configure_plamo!(; context_size=4096, max_tokens=1024, weight_storage=:bf16)
+    configure_plamo!(; context_size=4096, max_tokens=1024, weight_storage=:bf16, device=:auto, prefill_storage=:auto)
 
 Configure native Julia inference. The model stays in Scratch and loads lazily;
 changing settings releases the cached translator. `:bf16` retains original BF16
-weights; `:f32` uses expanded Float32 weights. Truncated translations raise an
-error rather than being cached as complete documentation.
+weights; `:f32` uses expanded Float32 weights. `device=:auto` uses Metal when
+Metal.jl has been loaded and a compatible GPU is available, otherwise it uses
+CPU. Use `device=:cpu` or `device=:metal` for explicit selection. On Metal,
+`prefill_storage=:f32` caches expanded weights for faster prefill;
+`:bf16` saves memory, and `:auto` checks available GPU and system memory.
+`prefill_storage` has no effect when `weight_storage=:f32`.
+Truncated
+translations raise an error rather than being cached as complete documentation.
 """
 function configure_plamo!(;
     context_size::Integer = 4096,
     max_tokens::Integer = 1024,
     weight_storage::Symbol = :bf16,
+    device::Symbol = :auto,
+    prefill_storage::Symbol = :auto,
 )
     1 <= context_size <= 32768 || throw(ArgumentError("context_size must be 1..32768"))
     1 <= max_tokens < context_size ||
         throw(ArgumentError("max_tokens must be positive and smaller than context_size"))
     weight_storage in (:bf16, :f32) ||
         throw(ArgumentError("weight_storage must be :bf16 or :f32"))
+    device in (:auto, :cpu, :metal) ||
+        throw(ArgumentError("device must be :auto, :cpu or :metal"))
+    prefill_storage in (:auto, :bf16, :f32) ||
+        throw(ArgumentError("prefill_storage must be :auto, :bf16 or :f32"))
     lock(MODEL_LOCK) do
         MODEL_OPTIONS[] = (
             context_size = Int(context_size),
             max_tokens = Int(max_tokens),
             weight_storage = weight_storage,
+            device = device,
+            prefill_storage = prefill_storage,
         )
         NATIVE_TRANSLATOR[] = nothing
     end
     nothing
+end
+
+function metal_selected()
+    device = MODEL_OPTIONS[].device
+    device === :metal && return true
+    device === :cpu && return false
+    # Loading Metal after a CPU translator was already constructed does not
+    # implicitly discard the loaded model. Reconfiguration resets the cache.
+    translator = NATIVE_TRANSLATOR[]
+    isnothing(translator) || return translator isa AbstractMetalTranslator
+    return applicable(metal_available) && metal_available()
 end
 
 # Called under MODEL_LOCK; concurrent Markdown traversal shares one model and
@@ -115,11 +152,17 @@ function native_translator()
     if isnothing(NATIVE_TRANSLATOR[])
         directory = verify_model(model_directory())
         options = MODEL_OPTIONS[]
-        NATIVE_TRANSLATOR[] = PLaMo.Translator(
-            directory;
-            context_size = options.context_size,
-            weight_storage = options.weight_storage,
-        )
+        if metal_selected()
+            applicable(metal_translator, directory, options) ||
+                throw(ArgumentError("Metal inference requires loading Metal.jl first"))
+            NATIVE_TRANSLATOR[] = metal_translator(directory, options)
+        else
+            NATIVE_TRANSLATOR[] = PLaMo.Translator(
+                directory;
+                context_size = options.context_size,
+                weight_storage = options.weight_storage,
+            )
+        end
     end
-    NATIVE_TRANSLATOR[]::PLaMo.Translator
+    NATIVE_TRANSLATOR[]::Union{PLaMo.Translator,AbstractMetalTranslator}
 end
