@@ -26,7 +26,7 @@ const Native = B.PLaMo
     @test !haskey(project["deps"], "CondaPkg")
     @test !isfile(joinpath(pkgdir(B), "CondaPkg.toml"))
     configure_plamo!(; context_size = 512, max_tokens = 32, weight_storage = :f32)
-    @test B.MODEL_OPTIONS[] == (context_size = 512, max_tokens = 32, weight_storage = :f32, device = :auto)
+    @test B.MODEL_OPTIONS[] == (context_size = 512, max_tokens = 32, weight_storage = :f32, device = :auto, prefill_storage = :auto)
     @test isnothing(B.NATIVE_TRANSLATOR[])
     @test_throws ArgumentError configure_plamo!(; context_size = 0)
     @test_throws ArgumentError configure_plamo!(; context_size = 32769)
@@ -41,6 +41,11 @@ const Native = B.PLaMo
         @test B.MODEL_OPTIONS[].device === :auto
         configure_plamo!(; device = :metal)
         @test B.MODEL_OPTIONS[].device === :metal
+        configure_plamo!(; device = :metal, prefill_storage = :f32)
+        @test B.MODEL_OPTIONS[].prefill_storage === :f32
+        configure_plamo!(; device = :metal, prefill_storage = :bf16)
+        @test B.MODEL_OPTIONS[].prefill_storage === :bf16
+        @test_throws ArgumentError configure_plamo!(; prefill_storage = :f16)
         caller_thread = Threads.threadid()
         observed_threads = Vector{Int}(undef, 32)
         B.foreach_translation(1:32) do index

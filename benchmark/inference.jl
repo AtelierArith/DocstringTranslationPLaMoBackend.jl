@@ -18,6 +18,9 @@ function run_benchmark(prompt_tokens, generated_tokens, repetitions)
     storage = Symbol(get(ENV, "PLAMO_BENCH_STORAGE", "bf16"))
     storage in (:bf16, :f32) ||
         throw(ArgumentError("PLAMO_BENCH_STORAGE must be bf16 or f32"))
+    output_mode = get(ENV, "PLAMO_BENCH_OUTPUT", "logits")
+    output_mode in ("logits", "token") ||
+        throw(ArgumentError("PLAMO_BENCH_OUTPUT must be logits or token"))
     device = get(ENV, "PLAMO_BENCH_DEVICE", "cpu")
     device in ("cpu", "metal") ||
         throw(ArgumentError("PLAMO_BENCH_DEVICE must be cpu or metal"))
@@ -26,13 +29,28 @@ function run_benchmark(prompt_tokens, generated_tokens, repetitions)
             DocstringTranslationPLaMoBackend,
             :DocstringTranslationPLaMoBackendMetalExt,
         )
+        prefill = Symbol(get(ENV, "PLAMO_BENCH_PREFILL", "auto"))
+        prefill in (:auto, :bf16, :f32) ||
+            throw(ArgumentError("PLAMO_BENCH_PREFILL must be auto, bf16 or f32"))
+        cache_bytes = metal.kv_cache_bytes(directory, prompt_tokens + generated_tokens)
+        hybrid = metal.use_hybrid_prefill(
+            storage,
+            prefill,
+            Metal.free_memory(),
+            Sys.free_memory(),
+            cache_bytes,
+        )
+        println("device=metal weight_storage=$storage hybrid_prefill=$hybrid")
         model = metal.MetalModel(
             directory;
             context_size = prompt_tokens + generated_tokens,
             weight_storage = storage,
+            hybrid,
         )
         make_state = () -> metal.MetalState(model, prompt_tokens + generated_tokens)
-        forward = (ids, state) -> metal.forward_gpu!(model, ids, state)
+        forward =
+            (ids, state) ->
+                metal.forward_gpu!(model, ids, state; token_only = output_mode == "token")
     else
         model = P.Translator(
             directory;
@@ -40,7 +58,10 @@ function run_benchmark(prompt_tokens, generated_tokens, repetitions)
             weight_storage = storage,
         ).model
         make_state = () -> P.request_state(model, prompt_tokens, generated_tokens)
-        forward = (ids, state) -> P.forward!(model, ids, state)
+        forward = (ids, state) -> begin
+            logits = P.forward!(model, ids, state)
+            output_mode == "token" ? argmax(logits) - 1 : logits
+        end
     end
     # A fixed valid token makes the arithmetic workload reproducible without
     # EOS or tokenizer-dependent early stopping.

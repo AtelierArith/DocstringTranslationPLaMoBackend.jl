@@ -97,15 +97,26 @@ traversal run without Julia thread parallelism; `JULIA_NUM_THREADS=8` is not
 needed for Metal. Metal.jl 1.12 or newer is an optional dependency.
 
 The GPU path retains the pinned BF16 weights and uses Float32 activations and
-accumulation. It may differ slightly from the CPU due to floating-point operation
-order. The GPU and CPU paths each keep their model and per-request KV cache on
-the selected device; changing settings releases the previous model.
+accumulation. For faster prompt processing, `prefill_storage=:auto` additionally
+caches Float32 projection weights when the reported GPU and system free memory
+both exceed 8 GiB plus the configured KV-cache capacity. The heuristic includes
+room for loading and temporary buffers but cannot guarantee future memory
+availability. Automatic selection falls back to BF16 if allocation fails.
+This cache adds approximately 2.2 GB of GPU allocations;
+select `configure_plamo!(; device=:metal, prefill_storage=:bf16)` to avoid the
+extra cache, or `:f32` to request it explicitly. When `weight_storage=:f32`,
+all projection weights are already Float32 and no extra copy is needed.
+
+Results can differ slightly from the CPU due to floating-point operation order.
+The GPU and CPU paths each keep their model and per-request KV cache on the
+selected device; changing settings releases the previous model.
 
 ## Inference settings
 
 ```julia
 configure_plamo!(;
     device=:auto,       # :cpu or :metal can be selected explicitly
+    prefill_storage=:auto, # Metal prompt cache: :bf16 or :f32
     context_size=4096,
     max_tokens=1024,
     weight_storage=:bf16, # :f32 expands weights and uses more memory
@@ -151,10 +162,14 @@ On Apple Silicon, the Metal-specific tests use a separate environment:
 julia --project=test/metal -e 'using Pkg; Pkg.instantiate()'
 julia --project=test/metal test/metal.jl
 PLAMO_METAL_REAL_MODEL=1 julia --project=test/metal test/metal.jl
+# Optional: expanded Float32 CPU/GPU models require substantially more memory.
+PLAMO_METAL_F32_MODEL=1 julia --project=test/metal test/metal.jl
+# Exercise decode after 2048 cached tokens and the long-context attention path.
+PLAMO_METAL_LONG_MODEL=1 julia --project=test/metal test/metal.jl
 ```
 
-The last command also checks real-model CPU/GPU logits, the prefill chunk
-boundary, and an end-to-end translation; it needs the cached model. CI runs the
+`PLAMO_METAL_REAL_MODEL=1` also checks real-model CPU/GPU logits, the prefill
+chunk boundary, and an end-to-end translation; it needs the cached model. CI runs the
 Metal kernel tests on its macOS runner when a usable GPU is exposed and reports
 a warning when it is not; the real-model check remains an explicit local test.
 

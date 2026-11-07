@@ -30,8 +30,7 @@ function rms_kernel!(output, input, weight, residual, eps, width, count)
     return
 end
 
-function rms_norm_gpu(x, weight, eps; residual = nothing)
-    output = MtlArray{Float32}(undef, size(x))
+function rms_norm_gpu!(output, x, weight, eps; residual = nothing)
     @metal threads=128 groups=cld(size(x, 2), 4) rms_kernel!(
         output,
         x,
@@ -42,6 +41,64 @@ function rms_norm_gpu(x, weight, eps; residual = nothing)
         size(x, 2),
     )
     return output
+end
+
+function rms_norm_gpu(x, weight, eps; residual = nothing)
+    output = MtlArray{Float32}(undef, size(x))
+    return rms_norm_gpu!(output, x, weight, eps; residual)
+end
+
+# One SIMD group normalizes a residual branch, adds the skip connection,
+# and prepares the normalized input for the next projection.
+function dual_rms_kernel!(
+    output,
+    normalized,
+    input,
+    residual,
+    post_weight,
+    pre_weight,
+    eps,
+    width,
+)
+    lane = Int(thread_index_in_simdgroup())
+    square = 0.0f0
+    for i = lane:32:width
+        @inbounds square = muladd(input[i, 1], input[i, 1], square)
+    end
+    for offset in (16, 8, 4, 2, 1)
+        square += simd_shuffle_down(square, offset)
+    end
+    scale = inv(sqrt(simd_shuffle(square, 1) / width + eps))
+    square2 = 0.0f0
+    for i = lane:32:width
+        @inbounds begin
+            value = (input[i, 1] * scale) * post_weight[i] + residual[i, 1]
+            output[i, 1] = value
+            square2 = muladd(value, value, square2)
+        end
+    end
+    for offset in (16, 8, 4, 2, 1)
+        square2 += simd_shuffle_down(square2, offset)
+    end
+    scale2 = inv(sqrt(simd_shuffle(square2, 1) / width + eps))
+    for i = lane:32:width
+        @inbounds normalized[i, 1] = (output[i, 1] * scale2) * pre_weight[i]
+    end
+    return
+end
+
+function dual_rms_gpu!(output, normalized, input, residual, post_weight, pre_weight, eps)
+    @metal threads=32 groups=1 dual_rms_kernel!(
+        output,
+        normalized,
+        input,
+        residual,
+        post_weight,
+        pre_weight,
+        eps,
+        size(input, 1),
+    )
+    return output, normalized
 end
 
 # One SIMD group owns a head, so all input values have been read before any
@@ -96,6 +153,8 @@ end
 
 function rotate_qk_kernel!(
     qkv,
+    keys,
+    values,
     qnorm,
     knorm,
     eps,
@@ -133,17 +192,43 @@ function rotate_qk_kernel!(
             b = qkv[base+half+i, token] * scale * n2
             co = cosines[i, position+token]
             si = sines[i, position+token]
-            qkv[base+i, token] = a * co - b * si
-            qkv[base+half+i, token] = b * co + a * si
+            first_value = a * co - b * si
+            second_value = b * co + a * si
+            qkv[base+i, token] = first_value
+            qkv[base+half+i, token] = second_value
+            if head >= qheads && !isnothing(keys)
+                kvbase = (head - qheads) * width
+                valuebase = (qheads + kheads) * width + kvbase
+                keys[kvbase+i, position+token] = first_value
+                keys[kvbase+half+i, position+token] = second_value
+                values[kvbase+i, position+token] = qkv[valuebase+i, token]
+                values[kvbase+half+i, position+token] = qkv[valuebase+half+i, token]
+            end
         end
     end
     return
 end
 
-function rotate_qk_gpu!(qkv, qnorm, knorm, eps, qheads, kheads, cosines, sines, position)
+function rotate_qk_gpu!(
+    qkv,
+    qnorm,
+    knorm,
+    eps,
+    qheads,
+    kheads,
+    cosines,
+    sines,
+    position;
+    keys = nothing,
+    values = nothing,
+)
+    isnothing(keys) == isnothing(values) ||
+        throw(ArgumentError("keys and values must be provided together"))
     count = size(qkv, 2)
     @metal threads=128 groups=cld((qheads + kheads) * count, 4) rotate_qk_kernel!(
         qkv,
+        keys,
+        values,
         qnorm,
         knorm,
         eps,
@@ -333,7 +418,8 @@ function single_attention_kernel!(
     return
 end
 
-function single_attention_gpu(
+function single_attention_gpu!(
+    output,
     query,
     keys,
     values,
@@ -347,7 +433,6 @@ function single_attention_gpu(
 )
     nkeys = position + 2 - start
     1 <= nkeys <= 2048 || throw(ArgumentError("single attention supports 1..2048 keys"))
-    output = MtlArray{Float32}(undef, dim * heads, 1)
     @metal threads=128 groups=heads single_attention_kernel!(
         output,
         query,
@@ -362,6 +447,34 @@ function single_attention_gpu(
         nkeys,
     )
     return output
+end
+
+function single_attention_gpu(
+    query,
+    keys,
+    values,
+    position,
+    start,
+    full,
+    window,
+    dim,
+    heads,
+    kv_heads,
+)
+    output = MtlArray{Float32}(undef, dim * heads, 1)
+    return single_attention_gpu!(
+        output,
+        query,
+        keys,
+        values,
+        position,
+        start,
+        full,
+        window,
+        dim,
+        heads,
+        kv_heads,
+    )
 end
 
 function attention_gpu(

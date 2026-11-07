@@ -1,5 +1,5 @@
 # Separate GPU-owned model; the vendored CPU implementation stays unchanged.
-struct MetalLayer{W,V}
+struct MetalLayer{W,V,F}
     qkv::W
     out::W
     gate_up::W
@@ -11,6 +11,7 @@ struct MetalLayer{W,V}
     pre_mlp::V
     post_mlp::V
     full::Bool
+    prefill::F
 end
 
 struct MetalModel{W,V,L}
@@ -26,7 +27,12 @@ struct MetalModel{W,V,L}
     capacity::Int
 end
 
-function MetalModel(directory; context_size::Int = 4096, weight_storage::Symbol = :bf16)
+function MetalModel(
+    directory;
+    context_size::Int = 4096,
+    weight_storage::Symbol = :bf16,
+    hybrid::Bool = false,
+)
     1 <= context_size <= 32768 || throw(ArgumentError("context_size must be 1..32768"))
     weight_storage in (:bf16, :f32) ||
         throw(ArgumentError("weight_storage must be :bf16 or :f32"))
@@ -55,11 +61,18 @@ function MetalModel(directory; context_size::Int = 4096, weight_storage::Symbol 
     qdim, kdim = c.heads * c.head_dim, c.kv_heads * c.head_dim
     layers = map(0:(c.layers-1)) do i
         prefix = "model.layers.layers.$i"
+        qkv = matrix(prefix * ".mixer.qkv_proj", c.hidden, qdim + 2kdim)
+        out = matrix(prefix * ".mixer.o_proj", qdim, c.hidden)
+        gate_up = matrix(prefix * ".mlp.gate_up_proj", c.hidden, 2c.intermediate)
+        down = matrix(prefix * ".mlp.down_proj", c.intermediate, c.hidden)
+        prefill =
+            hybrid && weight_storage === :bf16 ?
+            (Float32.(qkv), Float32.(out), Float32.(gate_up), Float32.(down)) : nothing
         MetalLayer(
-            matrix(prefix * ".mixer.qkv_proj", c.hidden, qdim + 2kdim),
-            matrix(prefix * ".mixer.o_proj", qdim, c.hidden),
-            matrix(prefix * ".mlp.gate_up_proj", c.hidden, 2c.intermediate),
-            matrix(prefix * ".mlp.down_proj", c.intermediate, c.hidden),
+            qkv,
+            out,
+            gate_up,
+            down,
             norm(prefix * ".mixer.q_norm", c.head_dim),
             norm(prefix * ".mixer.k_norm", c.head_dim),
             norm(prefix * ".pre_mixer_norm", c.hidden),
@@ -67,6 +80,7 @@ function MetalModel(directory; context_size::Int = 4096, weight_storage::Symbol 
             norm(prefix * ".pre_mlp_norm", c.hidden),
             norm(prefix * ".post_mlp_norm", c.hidden, 1 / 5^1.5),
             (i + 1) % c.pattern == 0,
+            prefill,
         )
     end
     lc, ls = P.rope_tables(c, false, context_size)
@@ -85,11 +99,39 @@ function MetalModel(directory; context_size::Int = 4096, weight_storage::Symbol 
     )
 end
 
-mutable struct MetalState{A}
+struct DecodeWorkspace{A}
+    hidden::A
+    residual::A
+    normalized::A
+    projected::A
+    qkv::A
+    attended::A
+    gate_up::A
+    gate::A
+    logits::A
+end
+function DecodeWorkspace(c)
+    allocate(rows) = MtlArray{Float32}(undef, rows, 1)
+    qdim, kdim = c.heads * c.head_dim, c.kv_heads * c.head_dim
+    DecodeWorkspace(
+        allocate(c.hidden),
+        allocate(c.hidden),
+        allocate(c.hidden),
+        allocate(c.hidden),
+        allocate(qdim + 2kdim),
+        allocate(qdim),
+        allocate(2c.intermediate),
+        allocate(c.intermediate),
+        allocate(c.vocabulary),
+    )
+end
+
+mutable struct MetalState{A,W}
     keys::Vector{A}
     values::Vector{A}
     position::Int
     capacity::Int
+    workspace::W
 end
 function MetalState(m::MetalModel, capacity::Int)
     1 <= capacity <= m.capacity || throw(ArgumentError("invalid cache capacity"))
@@ -99,6 +141,7 @@ function MetalState(m::MetalModel, capacity::Int)
         [MtlArray{Float32}(undef, rows, capacity) for _ in m.layers],
         0,
         capacity,
+        DecodeWorkspace(m.config),
     )
 end
 
@@ -219,14 +262,88 @@ function bf16_matvec_vector_kernel!(output, weight, input, width, columns)
     return
 end
 
-function projection_gpu(weight, input)
+function bf16_matvec_group_kernel!(out, weight, x, width, cols)
+    lane = Int(thread_index_in_simdgroup())
+    simd = Int(simdgroup_index_in_threadgroup())
+    tid = Int(thread_index_in_threadgroup())
+    base = (Int(threadgroup_position_in_grid_1d()) - 1) * 4 + 1
+    partial = MtlThreadGroupArray(Float32, 16)
+    a0=0.0f0
+    a1=0.0f0
+    a2=0.0f0
+    a3=0.0f0
+    for k = ((simd-1)*128+(lane-1)*4+1):512:width
+        xv=vload(Vec{4,Float32}, pointer(x, k))
+        ptr0=reinterpret(
+            Core.LLVMPtr{UInt16,Metal.AS.Device},
+            pointer(weight, k+(base+0-1)*width),
+        )
+        val0=reinterpret(Vec{4,Float32}, Vec{4,UInt32}(vload(Vec{4,UInt16}, ptr0))<<16)
+        a0 += sum(val0*xv)
+        ptr1=reinterpret(
+            Core.LLVMPtr{UInt16,Metal.AS.Device},
+            pointer(weight, k+(base+1-1)*width),
+        )
+        val1=reinterpret(Vec{4,Float32}, Vec{4,UInt32}(vload(Vec{4,UInt16}, ptr1))<<16)
+        a1 += sum(val1*xv)
+        ptr2=reinterpret(
+            Core.LLVMPtr{UInt16,Metal.AS.Device},
+            pointer(weight, k+(base+2-1)*width),
+        )
+        val2=reinterpret(Vec{4,Float32}, Vec{4,UInt32}(vload(Vec{4,UInt16}, ptr2))<<16)
+        a2 += sum(val2*xv)
+        ptr3=reinterpret(
+            Core.LLVMPtr{UInt16,Metal.AS.Device},
+            pointer(weight, k+(base+3-1)*width),
+        )
+        val3=reinterpret(Vec{4,Float32}, Vec{4,UInt32}(vload(Vec{4,UInt16}, ptr3))<<16)
+        a3 += sum(val3*xv)
+    end
+    for offset in (16, 8, 4, 2, 1)
+        a0+=simd_shuffle_down(a0, offset)
+        a1+=simd_shuffle_down(a1, offset)
+        a2+=simd_shuffle_down(a2, offset)
+        a3+=simd_shuffle_down(a3, offset)
+    end
+    if lane==1
+        @inbounds begin
+            partial[(simd-1)*4+1] = a0
+            partial[(simd-1)*4+2] = a1
+            partial[(simd-1)*4+3] = a2
+            partial[(simd-1)*4+4] = a3
+        end
+    end
+    threadgroup_barrier(Metal.MemoryFlagThreadGroup)
+    if tid <= 4
+        value=0.0f0
+        for group = 0:3
+            @inbounds value+=partial[group*4+tid]
+        end
+        @inbounds out[base+tid-1] = value
+    end
+    return
+end
+
+function projection_gpu!(result, weight, input)
     columns = size(weight, 2)
-    result = MtlArray{Float32}(undef, columns, size(input, 2))
     if eltype(weight) === Metal.BFloat16 &&
        size(input, 2) == 1 &&
-       size(weight, 1) % 128 == 0 &&
-       columns % 16 == 0 &&
+       size(weight, 1) % 512 == 0 &&
+       columns % 4 == 0 &&
+       columns <= 12288 &&
        input isa MtlArray
+        @metal threads=128 groups=cld(columns, 4) bf16_matvec_group_kernel!(
+            result,
+            weight,
+            input,
+            size(weight, 1),
+            columns,
+        )
+    elseif eltype(weight) === Metal.BFloat16 &&
+           size(input, 2) == 1 &&
+           size(weight, 1) % 128 == 0 &&
+           columns % 16 == 0 &&
+           input isa MtlArray
         @metal threads=128 groups=cld(columns, 16) bf16_matvec_vector_kernel!(
             result,
             weight,
@@ -248,12 +365,20 @@ function projection_gpu(weight, input)
     return result
 end
 
-function forward_gpu!(m::MetalModel, ids, state::MetalState)
+function projection_gpu(weight, input)
+    result = MtlArray{Float32}(undef, size(weight, 2), size(input, 2))
+    return projection_gpu!(result, weight, input)
+end
+
+gpu_token(logits) = Int(argmax(vec(logits))) - 1
+
+function forward_gpu!(m::MetalModel, ids, state::MetalState; token_only = false)
     isempty(ids) && throw(ArgumentError("token sequence must not be empty"))
     state.position + length(ids) <= state.capacity ||
         throw(ArgumentError("sequence exceeds cache capacity"))
     all(id -> 0 <= id < m.config.vocabulary, ids) ||
         throw(ArgumentError("token id outside vocabulary"))
+    length(ids) == 1 && return forward_decode_gpu!(m, only(ids), state; token_only)
     c = m.config
     n = length(ids)
     pos = state.position
@@ -261,10 +386,11 @@ function forward_gpu!(m::MetalModel, ids, state::MetalState)
     x = embedding_gpu(m.embedding, ids)
     c.scale_embedding && (x .*= sqrt(Float32(c.hidden)))
     for (index, layer) in enumerate(m.layers)
-        qkv = projection_gpu(layer.qkv, rms_norm_gpu(x, layer.pre_attn, c.eps))
+        prefill = n > 1 && !isnothing(layer.prefill) ? layer.prefill : nothing
+        wq, wo, wg, wd =
+            isnothing(prefill) ? (layer.qkv, layer.out, layer.gate_up, layer.down) : prefill
+        qkv = projection_gpu(wq, rms_norm_gpu(x, layer.pre_attn, c.eps))
         q = @view qkv[1:qdim, :]
-        k = @view qkv[(qdim+1):(qdim+kdim), :]
-        v = @view qkv[(qdim+kdim+1):end, :]
         co, si = layer.full ? (m.full_cos, m.full_sin) : (m.local_cos, m.local_sin)
         rotate_qk_gpu!(
             qkv,
@@ -275,10 +401,10 @@ function forward_gpu!(m::MetalModel, ids, state::MetalState)
             c.kv_heads,
             co,
             si,
-            pos,
+            pos;
+            keys = state.keys[index],
+            values = state.values[index],
         )
-        @views state.keys[index][:, (pos+1):(pos+n)] .= k
-        @views state.values[index][:, (pos+1):(pos+n)] .= v
         start = layer.full ? 1 : max(1, pos + 2 - c.window)
         attended = attention_gpu(
             q,
@@ -292,18 +418,136 @@ function forward_gpu!(m::MetalModel, ids, state::MetalState)
             c.heads,
             c.kv_heads,
         )
-        output = projection_gpu(layer.out, attended)
+        output = projection_gpu(wo, attended)
         output = rms_norm_gpu(output, layer.post_attn, c.eps; residual = x)
-        gate_up = projection_gpu(layer.gate_up, rms_norm_gpu(output, layer.pre_mlp, c.eps))
+        gate_up = projection_gpu(wg, rms_norm_gpu(output, layer.pre_mlp, c.eps))
         gate = @view gate_up[1:c.intermediate, :]
         up = @view gate_up[(c.intermediate+1):end, :]
         activated = (gate ./ (1.0f0 .+ exp.(-gate))) .* up
-        mlp = projection_gpu(layer.down, activated)
+        mlp = projection_gpu(wd, activated)
         x = rms_norm_gpu(mlp, layer.post_mlp, c.eps; residual = output)
     end
     state.position += n
     hidden = copy(@view x[:, end:end])
-    return vec(Array(projection_gpu(m.head, rms_norm_gpu(hidden, m.norm, c.eps))))
+    logits = projection_gpu(m.head, rms_norm_gpu(hidden, m.norm, c.eps))
+    return token_only ? gpu_token(logits) : vec(Array(logits))
+end
+
+function embedding_decode_kernel!(output, weight, token, hidden)
+    i = Int(thread_position_in_grid_1d())
+    i > hidden && return
+    @inbounds output[i, 1] = Float32(weight[i, token+1])
+    return
+end
+
+
+function activate_gate_kernel!(out, gate_up, intermediate)
+    i = Int(thread_position_in_grid_1d())
+    i > intermediate && return
+    @inbounds begin
+        gate = gate_up[i, 1]
+        out[i, 1] = (gate / (1.0f0 + exp(-gate))) * gate_up[intermediate+i, 1]
+    end
+    return
+end
+
+function forward_decode_gpu!(
+    m::MetalModel,
+    token::Integer,
+    state::MetalState;
+    token_only = false,
+)
+    c = m.config
+    pos = state.position
+    ws = state.workspace
+    qdim, kdim = c.heads * c.head_dim, c.kv_heads * c.head_dim
+    @metal threads=256 groups=cld(c.hidden, 256) embedding_decode_kernel!(
+        ws.hidden,
+        m.embedding,
+        token,
+        c.hidden,
+    )
+    c.scale_embedding && (ws.hidden .*= sqrt(Float32(c.hidden)))
+    rms_norm_gpu!(ws.normalized, ws.hidden, first(m.layers).pre_attn, c.eps)
+    for (index, layer) in enumerate(m.layers)
+        projection_gpu!(ws.qkv, layer.qkv, ws.normalized)
+        co, si = layer.full ? (m.full_cos, m.full_sin) : (m.local_cos, m.local_sin)
+        rotate_qk_gpu!(
+            ws.qkv,
+            layer.qnorm,
+            layer.knorm,
+            c.eps,
+            c.heads,
+            c.kv_heads,
+            co,
+            si,
+            pos;
+            keys = state.keys[index],
+            values = state.values[index],
+        )
+        start = layer.full ? 1 : max(1, pos + 2 - c.window)
+        nkeys = pos + 2 - start
+        if nkeys <= 2048
+            single_attention_gpu!(
+                ws.attended,
+                ws.qkv,
+                state.keys[index],
+                state.values[index],
+                pos,
+                start,
+                layer.full,
+                c.window,
+                c.head_dim,
+                c.heads,
+                c.kv_heads,
+            )
+        else
+            query = @view ws.qkv[1:qdim, :]
+            attended = attention_gpu(
+                query,
+                state.keys[index],
+                state.values[index],
+                pos,
+                start,
+                layer.full,
+                c.window,
+                c.head_dim,
+                c.heads,
+                c.kv_heads,
+            )
+            ws.attended .= attended
+        end
+        projection_gpu!(ws.projected, layer.out, ws.attended)
+        dual_rms_gpu!(
+            ws.residual,
+            ws.normalized,
+            ws.projected,
+            ws.hidden,
+            layer.post_attn,
+            layer.pre_mlp,
+            c.eps,
+        )
+        projection_gpu!(ws.gate_up, layer.gate_up, ws.normalized)
+        @metal threads=256 groups=cld(c.intermediate, 256) activate_gate_kernel!(
+            ws.gate,
+            ws.gate_up,
+            c.intermediate,
+        )
+        projection_gpu!(ws.projected, layer.down, ws.gate)
+        next_norm = index < length(m.layers) ? m.layers[index+1].pre_attn : m.norm
+        dual_rms_gpu!(
+            ws.hidden,
+            ws.normalized,
+            ws.projected,
+            ws.residual,
+            layer.post_mlp,
+            next_norm,
+            c.eps,
+        )
+    end
+    state.position += 1
+    projection_gpu!(ws.logits, m.head, ws.normalized)
+    return token_only ? gpu_token(ws.logits) : vec(Array(ws.logits))
 end
 
 struct MetalTranslator{M} <: B.AbstractMetalTranslator
@@ -312,15 +556,70 @@ struct MetalTranslator{M} <: B.AbstractMetalTranslator
 end
 
 B.metal_available() = Metal.functional()
+function kv_cache_bytes(directory, context_size)
+    c = P.ModelConfig(P.JSON.parsefile(joinpath(directory, "config.json")))
+    return 2 * c.layers * c.kv_heads * c.head_dim * context_size * sizeof(Float32)
+end
+
+function use_hybrid_prefill(
+    weight_storage,
+    prefill_storage,
+    gpu_free,
+    system_free,
+    cache_bytes,
+)
+    weight_storage === :bf16 || return false
+    prefill_storage === :f32 && return true
+    prefill_storage === :auto || return false
+    # Includes the BF16 model, expanded prefill weights, host-side loading,
+    # temporary buffers and a margin for the rest of the application.
+    required = 8 * 1024^3 + cache_bytes
+    return gpu_free >= required && system_free >= required
+end
+
+function load_model_with_fallback(loader, directory, options, hybrid)
+    model = try
+        loader(
+            directory;
+            context_size = options.context_size,
+            weight_storage = options.weight_storage,
+            hybrid,
+        )
+    catch err
+        if err isa OutOfMemoryError && hybrid && options.prefill_storage === :auto
+            @warn "Float32 prefill cache could not be allocated; falling back to BF16 prefill"
+            nothing
+        else
+            rethrow()
+        end
+    end
+    if isnothing(model)
+        GC.gc(true)
+        Metal.synchronize()
+        GC.gc(true)
+        return loader(
+            directory;
+            context_size = options.context_size,
+            weight_storage = options.weight_storage,
+            hybrid = false,
+        )
+    end
+    return model
+end
+
 function B.metal_translator(directory::AbstractString, options)
     Metal.functional() ||
         throw(ArgumentError("Metal.jl cannot access a supported Apple GPU"))
     tokenizer = P.Tokenizer(directory)
-    model = MetalModel(
-        directory;
-        context_size = options.context_size,
-        weight_storage = options.weight_storage,
+    cache_bytes = kv_cache_bytes(directory, options.context_size)
+    hybrid = use_hybrid_prefill(
+        options.weight_storage,
+        options.prefill_storage,
+        Metal.free_memory(),
+        Sys.free_memory(),
+        cache_bytes,
     )
+    model = load_model_with_fallback(MetalModel, directory, options, hybrid)
     length(tokenizer.pieces) == model.config.vocabulary ||
         throw(ArgumentError("vocabulary/model size mismatch"))
     return MetalTranslator(model, tokenizer)
@@ -336,10 +635,14 @@ function P.translate(
         throw(ArgumentError("prompt plus output limit exceeds context capacity"))
     started = time_ns()
     state = MetalState(translator.model, length(tokens) + request.max_tokens)
-    logits = Float32[]
+    token = 0
     for first = 1:128:length(tokens)
-        logits =
-            forward_gpu!(translator.model, @view(tokens[first:min(first+127, end)]), state)
+        token = forward_gpu!(
+            translator.model,
+            @view(tokens[first:min(first+127, end)]),
+            state;
+            token_only = true,
+        )
     end
     stops = (
         translator.model.config.eos,
@@ -351,7 +654,6 @@ function P.translate(
     first = 0.0
     finish = :length
     for step = 1:request.max_tokens
-        token = argmax(logits) - 1
         step == 1 && (first = (time_ns() - started) / 1e9)
         if token in stops
             finish = :stop
@@ -364,7 +666,7 @@ function P.translate(
             break
         end
         step < request.max_tokens &&
-            (logits = forward_gpu!(translator.model, [token], state))
+            (token = forward_gpu!(translator.model, [token], state; token_only = true))
     end
     return P.Translation(
         P.decode_bytes(bytes),

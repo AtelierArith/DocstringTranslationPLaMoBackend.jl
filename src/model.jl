@@ -11,8 +11,15 @@ const MODEL_ASSETS = (
 )
 const MODEL_LOCK = ReentrantLock()
 abstract type AbstractMetalTranslator end
-const NATIVE_TRANSLATOR = Ref{Union{Nothing,PLaMo.Translator,AbstractMetalTranslator}}(nothing)
-const MODEL_OPTIONS = Ref((context_size = 4096, max_tokens = 1024, weight_storage = :bf16, device = :auto))
+const NATIVE_TRANSLATOR =
+    Ref{Union{Nothing,PLaMo.Translator,AbstractMetalTranslator}}(nothing)
+const MODEL_OPTIONS = Ref((
+    context_size = 4096,
+    max_tokens = 1024,
+    weight_storage = :bf16,
+    device = :auto,
+    prefill_storage = :auto,
+))
 
 # Implemented by the optional Metal extension when Metal.jl is loaded.
 function metal_translator end
@@ -86,13 +93,17 @@ function install_model!(; source_directory::Union{Nothing,AbstractString} = noth
 end
 
 """
-    configure_plamo!(; context_size=4096, max_tokens=1024, weight_storage=:bf16, device=:auto)
+    configure_plamo!(; context_size=4096, max_tokens=1024, weight_storage=:bf16, device=:auto, prefill_storage=:auto)
 
 Configure native Julia inference. The model stays in Scratch and loads lazily;
 changing settings releases the cached translator. `:bf16` retains original BF16
 weights; `:f32` uses expanded Float32 weights. `device=:auto` uses Metal when
 Metal.jl has been loaded and a compatible GPU is available, otherwise it uses
-CPU. Use `device=:cpu` or `device=:metal` for explicit selection. Truncated
+CPU. Use `device=:cpu` or `device=:metal` for explicit selection. On Metal,
+`prefill_storage=:f32` caches expanded weights for faster prefill;
+`:bf16` saves memory, and `:auto` checks available GPU and system memory.
+`prefill_storage` has no effect when `weight_storage=:f32`.
+Truncated
 translations raise an error rather than being cached as complete documentation.
 """
 function configure_plamo!(;
@@ -100,6 +111,7 @@ function configure_plamo!(;
     max_tokens::Integer = 1024,
     weight_storage::Symbol = :bf16,
     device::Symbol = :auto,
+    prefill_storage::Symbol = :auto,
 )
     1 <= context_size <= 32768 || throw(ArgumentError("context_size must be 1..32768"))
     1 <= max_tokens < context_size ||
@@ -108,12 +120,15 @@ function configure_plamo!(;
         throw(ArgumentError("weight_storage must be :bf16 or :f32"))
     device in (:auto, :cpu, :metal) ||
         throw(ArgumentError("device must be :auto, :cpu or :metal"))
+    prefill_storage in (:auto, :bf16, :f32) ||
+        throw(ArgumentError("prefill_storage must be :auto, :bf16 or :f32"))
     lock(MODEL_LOCK) do
         MODEL_OPTIONS[] = (
             context_size = Int(context_size),
             max_tokens = Int(max_tokens),
             weight_storage = weight_storage,
             device = device,
+            prefill_storage = prefill_storage,
         )
         NATIVE_TRANSLATOR[] = nothing
     end
