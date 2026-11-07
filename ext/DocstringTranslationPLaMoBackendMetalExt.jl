@@ -550,6 +550,57 @@ function single_attention_gpu(
     )
 end
 
+# A SIMD group owns each head/query column; lanes keep their own score slots
+# through all three passes, so no threadgroup-memory synchronization is needed.
+function masked_softmax_kernel!(
+    scores,
+    position,
+    start,
+    full,
+    window,
+    heads,
+    nkeys,
+    nqueries,
+    scale,
+)
+    lane = Int(thread_index_in_simdgroup())
+    index =
+        (Int(threadgroup_position_in_grid_1d()) - 1) * 4 + Int(simdgroup_index_in_threadgroup())
+    index > heads * nqueries && return
+    head = (index - 1) % heads + 1
+    token = (index - 1) ÷ heads + 1
+    qp = position + token
+    maximum_value = -Inf32
+    for key = lane:32:nkeys
+        kp = start + key - 1
+        @inbounds value = kp > qp || (!full && kp + window <= qp) ? -Inf32 :
+                          scores[key, head, token] * scale
+        maximum_value = max(maximum_value, value)
+    end
+    for offset in (16, 8, 4, 2, 1)
+        maximum_value = max(maximum_value, simd_shuffle_down(maximum_value, offset))
+    end
+    maximum_value = simd_shuffle(maximum_value, 1)
+    total = 0.0f0
+    for key = lane:32:nkeys
+        kp = start + key - 1
+        @inbounds begin
+            value = kp > qp || (!full && kp + window <= qp) ? 0.0f0 :
+                    exp(scores[key, head, token] * scale - maximum_value)
+            scores[key, head, token] = value
+            total += value
+        end
+    end
+    for offset in (16, 8, 4, 2, 1)
+        total += simd_shuffle_down(total, offset)
+    end
+    total = simd_shuffle(total, 1)
+    for key = lane:32:nkeys
+        @inbounds scores[key, head, token] /= total
+    end
+    return
+end
+
 function attention_gpu(
     query,
     keys,
@@ -564,6 +615,28 @@ function attention_gpu(
 )
     nqueries = size(query, 2)
     nkeys = position + nqueries - start + 1
+    if nqueries >= 32 && kv_heads == 1
+        # Every query head shares the same K/V matrices. Flattening heads and
+        # tokens lets MPS evaluate both attention products as dense GEMMs.
+        q = reshape(copy(query), dim, heads*nqueries)
+        k = copy(@view keys[:, start:(position+nqueries)])
+        v = copy(@view values[:, start:(position+nqueries)])
+        scores2 = transpose(k)*q
+        scores = reshape(scores2, nkeys, heads, nqueries)
+        @metal threads=128 groups=cld(heads*nqueries, 4) masked_softmax_kernel!(
+            scores,
+            position,
+            start,
+            full,
+            window,
+            heads,
+            nkeys,
+            nqueries,
+            inv(sqrt(Float32(dim))),
+        )
+        result = v*reshape(scores, nkeys, heads*nqueries)
+        return reshape(result, dim*heads, nqueries)
+    end
     if nqueries == 1 && nkeys <= 2048
         return single_attention_gpu(
             query,

@@ -23,6 +23,17 @@ to `bf16` or `f32` to force a specific cache. The default `logits` output
 mode synchronizes and reads the full logits after every forward call; set
 `PLAMO_BENCH_OUTPUT=token` to measure the production greedy token selection.
 
+Inspect warm GPU kernel activity with:
+
+```sh
+JULIA_NUM_THREADS=1 julia --project=test/metal benchmark/profile_metal.jl decode
+JULIA_NUM_THREADS=1 julia --project=test/metal benchmark/profile_metal.jl prefill
+```
+
+The integrated Metal profiler changes command batching and omits MPS matrix
+multiplications from its device activity table. Use these profiles to locate
+costly kernels and `inference.jl` to compare actual throughput.
+
 For comparisons, convert the same pinned checkpoint to an unquantized BF16
 GGUF and build llama.cpp with Metal. For example, with llama.cpp commit
 `fd27b2034905f8dadd8bd6d2cc44595f4929d391`:

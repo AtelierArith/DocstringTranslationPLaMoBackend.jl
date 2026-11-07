@@ -213,6 +213,30 @@ const M = Base.get_extension(B, :DocstringTranslationPLaMoBackendMetalExt)
     )
     @test Array(device_view) ≈ reference rtol=2.0f-5 atol=2.0f-5
 
+    # Single-KV-head prefill can flatten query heads into a matrix product.
+    # Odd dimensions, offset caches and partial causal windows must agree.
+    for dim in (7, 128), count in (3, 129), full in (true, false)
+        position, start, heads = 5, 2, 3
+        q = randn(Float32, dim * heads, count)
+        k = randn(Float32, dim, position + count)
+        v = randn(Float32, dim, position + count)
+        reference = similar(q)
+        P.grouped_attention!(reference, q, k, v, position, start, full, 4, dim, heads, 1)
+        result = M.attention_gpu(
+            MtlArray(q),
+            MtlArray(k),
+            MtlArray(v),
+            position,
+            start,
+            full,
+            4,
+            dim,
+            heads,
+            1,
+        )
+        @test Array(result) ≈ reference rtol=3.0f-5 atol=3.0f-5
+    end
+
     for full in (true, false), window in (2, 128)
         decode_q = randn(Float32, 128 * 4, 1)
         decode_k = randn(Float32, 128 * 2, 137)
