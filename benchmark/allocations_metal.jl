@@ -1,7 +1,7 @@
 using AllocCheck, DocstringTranslationPLaMoBackend, Metal, Profile, Statistics
 
 const Backend = DocstringTranslationPLaMoBackend
-const GPU = Base.get_extension(Backend, :DocstringTranslationPLaMoBackendMetalExt)
+const GPU = Backend.MetalBackend
 
 decode_vector!(model, state) = GPU.forward_gpu!(model, [0], state; token_only = true)
 decode_token!(model, state) = GPU.forward_gpu!(model, (0,), state; token_only = true)
@@ -50,7 +50,7 @@ function static_report(f, args)
 end
 
 package_frame(frame) =
-    occursin("/ext/", string(frame.file)) &&
+    occursin("/src/metal/", string(frame.file)) &&
     occursin("DocstringTranslationPLaMoBackend", string(frame.file))
 
 function allocation_profile(model, state)

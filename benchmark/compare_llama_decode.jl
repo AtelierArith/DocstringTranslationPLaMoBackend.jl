@@ -1,7 +1,7 @@
 # Same token IDs, synchronized per token, sequential alternating runs.
 using DocstringTranslationPLaMoBackend, Metal, Statistics
 const B=DocstringTranslationPLaMoBackend
-const E=Base.get_extension(B, :DocstringTranslationPLaMoBackendMetalExt)
+const E=B.MetalBackend
 const LIB = get(ENV, "PLAMO_LLAMA_BENCH_LIBRARY", "")
 isempty(LIB) && error("set PLAMO_LLAMA_BENCH_LIBRARY to the compiled benchmark bridge")
 length(ARGS) == 1 || error("usage: compare_llama_decode.jl model-q4_0.gguf")

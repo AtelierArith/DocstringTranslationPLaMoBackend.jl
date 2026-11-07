@@ -1,6 +1,6 @@
-module DocstringTranslationPLaMoBackendMetalExt
+module MetalBackend
 
-using DocstringTranslationPLaMoBackend
+import ..DocstringTranslationPLaMoBackend
 using Metal
 using LinearAlgebra
 

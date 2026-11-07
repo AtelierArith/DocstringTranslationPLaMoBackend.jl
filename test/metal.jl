@@ -4,7 +4,7 @@ using Test, Random, Metal, DocstringTranslationPLaMoBackend
 
 const B = DocstringTranslationPLaMoBackend
 const P = B.PLaMo
-const M = Base.get_extension(B, :DocstringTranslationPLaMoBackendMetalExt)
+const M = B.MetalBackend
 
 include("metal_token.jl")
 include("metal_quantization.jl")

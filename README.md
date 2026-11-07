@@ -71,30 +71,27 @@ The weights follow the [PLaMo Community License](https://plamo.preferredai.jp/in
 
 ## Apple Silicon GPU
 
-On a supported Apple Silicon Mac, install Metal.jl in the environment that uses
-this package, then load it before starting translation:
+On Apple Silicon Macs, translation uses the GPU and Q4_0 weights by default; no
+extra package or `using Metal` is needed:
 
 ```julia
-using Metal
 using DocstringTranslationPLaMoBackend
-
-configure_plamo!(; device=:metal)
 @switchlang! :Japanese
 ```
 
-The default `device=:auto` selects Metal when Metal.jl is loaded and a supported
-GPU is available, and otherwise uses the CPU. Use `device=:cpu` to force the CPU.
-If you load Metal after the CPU model has already been loaded, call
-`configure_plamo!(; device=:metal)` to switch and reload it. Explicit `:metal`
-selection reports an error if Metal is unavailable. GPU requests and Markdown
+Metal.jl is a regular dependency, but it is only loaded on Apple Silicon
+(macOS on `aarch64`); other platforms install it without loading it. The default
+`device=:auto` selects Metal when a supported GPU is available and otherwise
+uses the CPU. Use `device=:cpu` to force the CPU. Explicit `:metal` selection
+reports an error if Metal is unavailable. GPU requests and Markdown
 traversal run without Julia thread parallelism; `JULIA_NUM_THREADS=8` is not
-needed for Metal. Metal.jl 1.12 or newer is an optional dependency.
+needed for Metal.
 Decode kernels omit GPU exception details by default while still reporting
 `Metal.KernelException`. Run Julia with `-g2` to retain full device diagnostics.
 This setting does not enable fast math or change inference precision.
 
-The GPU path retains the pinned BF16 weights and uses Float32 activations and
-accumulation. For faster prompt processing, `prefill_storage=:auto` additionally
+With `weight_storage=:bf16`, the GPU path retains the pinned BF16 weights; all
+formats use Float32 activations and accumulation. For faster prompt processing, `prefill_storage=:auto` additionally
 caches Float32 projection weights when the reported GPU and system free memory
 both exceed 8 GiB plus the configured KV-cache capacity. The heuristic includes
 room for loading and temporary buffers but cannot guarantee future memory
@@ -116,16 +113,16 @@ configure_plamo!(;
     prefill_storage=:auto, # Metal prompt cache: :bf16 or :f32
     context_size=4096,
     max_tokens=1024,
-    weight_storage=:bf16, # :f32 expands weights and uses more memory
+    weight_storage=:auto, # :q4_0 on Metal, :bf16 on CPU; :f32 uses more memory
 )
 ```
 
-Metal also supports optional block quantization:
+Metal supports block quantization; `:q4_0` is the Metal default:
 
 ```julia
 DocstringTranslationPLaMoBackend.configure_plamo!(
     device=:metal,
-    weight_storage=:q8_0, # :q4_0 is also available; the default remains :bf16
+    weight_storage=:q8_0, # or :bf16 to keep the original weights
 )
 ```
 

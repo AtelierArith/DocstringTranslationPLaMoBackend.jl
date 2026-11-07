@@ -3,7 +3,7 @@ using DocstringTranslationPLaMoBackend, Metal, Statistics
 
 const B = DocstringTranslationPLaMoBackend
 const P = B.PLaMo
-const E = Base.get_extension(B, :DocstringTranslationPLaMoBackendMetalExt)
+const E = B.MetalBackend
 const SOURCES = [
     "The meeting starts at ten.",
     "Return the sum of the elements in the array.",
