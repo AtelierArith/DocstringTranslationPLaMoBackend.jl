@@ -425,7 +425,7 @@ function forward_gpu!(m::MetalModel, ids, state::MetalState; token_only = false)
         gate_up = projection_gpu(wg, rms_norm_gpu(output, layer.pre_mlp, c.eps))
         gate = @view gate_up[1:c.intermediate, :]
         up = @view gate_up[(c.intermediate+1):end, :]
-        activated = (gate ./ (1.0f0 .+ exp.(-gate))) .* up
+        activated = @. (gate / (1.0f0 + exp(-gate))) * up
         mlp = projection_gpu(wd, activated)
         x = rms_norm_gpu(mlp, layer.post_mlp, c.eps; residual = output)
     end
@@ -669,7 +669,7 @@ function P.translate(
             break
         end
         step < request.max_tokens &&
-            (token = forward_gpu!(translator.model, [token], state; token_only = true))
+            (token = forward_gpu!(translator.model, (token,), state; token_only = true))
     end
     return P.Translation(
         P.decode_bytes(bytes),

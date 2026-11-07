@@ -473,6 +473,40 @@ function merge_attention_kernel!(output, partial, dim, heads, parts)
     return
 end
 
+function launch_single_attention!(
+    storage,
+    query,
+    keys,
+    values,
+    position,
+    start,
+    full,
+    window,
+    dim,
+    heads,
+    kv_heads,
+    nkeys,
+    parts,
+    ::Val{split},
+) where {split}
+    @metal threads=128 groups=heads*parts single_attention_kernel!(
+        storage,
+        query,
+        keys,
+        values,
+        position,
+        start,
+        full,
+        window,
+        dim,
+        heads ÷ kv_heads,
+        nkeys,
+        heads,
+        Val(split),
+    )
+    return nothing
+end
+
 function single_attention_gpu!(
     output,
     query,
@@ -489,34 +523,49 @@ function single_attention_gpu!(
 )
     nkeys = position + 2 - start
     1 <= nkeys <= 2048 || throw(ArgumentError("single attention supports 1..2048 keys"))
-    split = nkeys > 32
-    parts = split ? cld(nkeys, 32) : 1
-    storage =
-        split ?
-        (isnothing(partial) ? MtlArray{Float32}(undef, dim+2, heads, parts) : partial) :
-        output
-    @metal threads=128 groups=heads*parts single_attention_kernel!(
-        storage,
-        query,
-        keys,
-        values,
-        position,
-        start,
-        full,
-        window,
-        dim,
-        heads ÷ kv_heads,
-        nkeys,
-        heads,
-        Val(split),
-    )
-    if split
+    if nkeys > 32
+        parts = cld(nkeys, 32)
+        storage =
+            isnothing(partial) ? MtlArray{Float32}(undef, dim+2, heads, parts) : partial
+        launch_single_attention!(
+            storage,
+            query,
+            keys,
+            values,
+            position,
+            start,
+            full,
+            window,
+            dim,
+            heads,
+            kv_heads,
+            nkeys,
+            parts,
+            Val(true),
+        )
         @metal threads=256 groups=cld(dim*heads, 256) merge_attention_kernel!(
             output,
             storage,
             dim,
             heads,
             parts,
+        )
+    else
+        launch_single_attention!(
+            output,
+            query,
+            keys,
+            values,
+            position,
+            start,
+            full,
+            window,
+            dim,
+            heads,
+            kv_heads,
+            nkeys,
+            1,
+            Val(false),
         )
     end
     return output
@@ -565,7 +614,8 @@ function masked_softmax_kernel!(
 )
     lane = Int(thread_index_in_simdgroup())
     index =
-        (Int(threadgroup_position_in_grid_1d()) - 1) * 4 + Int(simdgroup_index_in_threadgroup())
+        (Int(threadgroup_position_in_grid_1d()) - 1) * 4 +
+        Int(simdgroup_index_in_threadgroup())
     index > heads * nqueries && return
     head = (index - 1) % heads + 1
     token = (index - 1) ÷ heads + 1
@@ -573,8 +623,9 @@ function masked_softmax_kernel!(
     maximum_value = -Inf32
     for key = lane:32:nkeys
         kp = start + key - 1
-        @inbounds value = kp > qp || (!full && kp + window <= qp) ? -Inf32 :
-                          scores[key, head, token] * scale
+        @inbounds value =
+            kp > qp || (!full && kp + window <= qp) ? -Inf32 :
+            scores[key, head, token] * scale
         maximum_value = max(maximum_value, value)
     end
     for offset in (16, 8, 4, 2, 1)
@@ -585,8 +636,9 @@ function masked_softmax_kernel!(
     for key = lane:32:nkeys
         kp = start + key - 1
         @inbounds begin
-            value = kp > qp || (!full && kp + window <= qp) ? 0.0f0 :
-                    exp(scores[key, head, token] * scale - maximum_value)
+            value =
+                kp > qp || (!full && kp + window <= qp) ? 0.0f0 :
+                exp(scores[key, head, token] * scale - maximum_value)
             scores[key, head, token] = value
             total += value
         end

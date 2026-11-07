@@ -34,6 +34,40 @@ The integrated Metal profiler changes command batching and omits MPS matrix
 multiplications from its device activity table. Use these profiles to locate
 costly kernels and `inference.jl` to compare actual throughput.
 
+Check allocations in a separate diagnostic environment:
+
+```sh
+julia --project=benchmark -e 'using Pkg; Pkg.instantiate(; allow_build=false)'
+JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  julia --project=benchmark benchmark/allocations_metal.jl
+```
+
+This runs AllocCheck static analysis, warm `@allocated` measurements and a
+`Profile.Allocs` trace for decode. It compares the production token result with
+full CPU logits and prints GPU buffer-creation API calls separately. Model
+loading and request-state setup are excluded. Static findings include possible
+cold paths and unresolved dispatches; their count is not a runtime allocation
+count. Julia allocation measurements exclude Metal buffer storage. Set
+`PLAMO_ALLOC_FULL=1` to print every static backtrace instead of grouped summaries.
+
+For example, on M2 Max with Julia 1.13.3, Metal 1.12.0 and AllocCheck 0.2.8,
+BF16 weights and the automatic Float32 prefill cache produced these warm host
+allocation measurements (128-token prompt, request capacity 512):
+
+| Operation | Julia host bytes/call |
+| --- | ---: |
+| Decode, token result, vector input | 98,096 |
+| Decode, token result, tuple input (production) | 98,032 |
+| Decode, full CPU logits | 534,384 |
+| Prefill, 128 tokens, token result | 515,696 |
+
+Making the split-attention launch types concrete reduced token decode from
+103,408 to 98,032 host bytes/call. The allocation trace attributes most remaining
+bytes to GPU kernel-launch call sites. The warm decode profile observed one
+`newBufferWithLength:options:` call, so decode still creates a GPU buffer.
+AllocCheck also reports potential allocation sites and unresolved dispatches in
+Metal's launch/runtime paths; this is not an allocation-free inference path.
+
 For comparisons, convert the same pinned checkpoint to an unquantized BF16
 GGUF and build llama.cpp with Metal. For example, with llama.cpp commit
 `fd27b2034905f8dadd8bd6d2cc44595f4929d391`:
