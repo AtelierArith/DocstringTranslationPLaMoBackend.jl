@@ -63,12 +63,6 @@ PLAMO_SOURCE_DIR=/path/to/plamo-3-translate-0.8b \
   julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.build("DocstringTranslationPLaMoBackend")'
 ```
 
-The direct installer also accepts the path:
-
-```sh
-julia --project install_model.jl /path/to/plamo-3-translate-0.8b
-```
-
 The imported files must match the pinned official revision, including both license files. They are verified and copied; the external directory does not become the runtime model location.
 
 The downloaded assets occupy about **1.78 GB**. The default BF16 implementation retains approximately **2.73 GB of weight payload** on an x86 CPU with SSSE3, plus normalization, KV caches, workspace, allocator overhead and load-time temporaries. It keeps original BF16 values and uses F32 arithmetic; dictionary compression is lossless. Other Julia CPU architectures use the portable path, but actual inference has only been validated on Intel CPU.
