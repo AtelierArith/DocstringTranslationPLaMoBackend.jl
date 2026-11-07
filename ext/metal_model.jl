@@ -356,14 +356,77 @@ function bf16_matvec_group_kernel!(out, weight, x, width, cols)
     return
 end
 
+# Load eight BF16 values as four UInt32 words, then widen each half exactly.
+# Four SIMD groups split the work for each pair of Float32 output rows.
+function bf16_packed_matvec_kernel!(out, weight, x, width, cols)
+    lane=Int(thread_index_in_simdgroup())
+    simd=Int(simdgroup_index_in_threadgroup())
+    tid=Int(thread_index_in_threadgroup())
+    base=(Int(threadgroup_position_in_grid_1d())-1)*2+1
+    partial=MtlThreadGroupArray(Float32, 8)
+    a0=0.0f0
+    a1=0.0f0
+    for k = ((simd-1)*256+(lane-1)*8+1):1024:width
+        xv=vload(Vec{8,Float32}, pointer(x, k))
+        xe=P.SIMD.shufflevector(xv, Val((0, 2, 4, 6)))
+        xo=P.SIMD.shufflevector(xv, Val((1, 3, 5, 7)))
+        ptr0=reinterpret(
+            Core.LLVMPtr{UInt32,Metal.AS.Device},
+            pointer(weight, k+(base+0-1)*width),
+        )
+        raw0=vload(Vec{4,UInt32}, ptr0)
+        low0=reinterpret(Vec{4,Float32}, raw0<<16)
+        high0=reinterpret(Vec{4,Float32}, raw0&Vec{4,UInt32}(0xffff0000))
+        a0+=sum(low0*xe)+sum(high0*xo)
+        ptr1=reinterpret(
+            Core.LLVMPtr{UInt32,Metal.AS.Device},
+            pointer(weight, k+(base+1-1)*width),
+        )
+        raw1=vload(Vec{4,UInt32}, ptr1)
+        low1=reinterpret(Vec{4,Float32}, raw1<<16)
+        high1=reinterpret(Vec{4,Float32}, raw1&Vec{4,UInt32}(0xffff0000))
+        a1+=sum(low1*xe)+sum(high1*xo)
+    end
+    for offset in (16, 8, 4, 2, 1)
+        a0+=simd_shuffle_down(a0, offset)
+        a1+=simd_shuffle_down(a1, offset)
+    end
+    if lane==1
+        @inbounds partial[(simd-1)*2+1]=a0
+        @inbounds partial[(simd-1)*2+2]=a1
+    end
+    threadgroup_barrier(Metal.MemoryFlagThreadGroup)
+    if tid<=2
+        value=0.0f0
+        for group = 0:3
+            @inbounds value+=partial[group*2+tid]
+        end
+        @inbounds out[base+tid-1]=value
+    end
+    return
+end
 function projection_gpu!(result, weight, input)
     columns = size(weight, 2)
     if eltype(weight) === Metal.BFloat16 &&
        size(input, 2) == 1 &&
-       size(weight, 1) % 512 == 0 &&
-       columns % 4 == 0 &&
-       columns <= 12288 &&
+       size(weight, 1) >= 1024 &&
+       size(weight, 1) % 256 == 0 &&
+       columns % 2 == 0 &&
+       weight isa MtlArray &&
        input isa MtlArray
+        @metal threads=128 groups=cld(columns, 2) bf16_packed_matvec_kernel!(
+            result,
+            weight,
+            input,
+            size(weight, 1),
+            columns,
+        )
+    elseif eltype(weight) === Metal.BFloat16 &&
+           size(input, 2) == 1 &&
+           size(weight, 1) % 512 == 0 &&
+           columns % 4 == 0 &&
+           columns <= 12288 &&
+           input isa MtlArray
         @metal threads=128 groups=cld(columns, 4) bf16_matvec_group_kernel!(
             result,
             weight,

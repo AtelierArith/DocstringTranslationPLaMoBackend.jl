@@ -146,6 +146,16 @@ const M = Base.get_extension(B, :DocstringTranslationPLaMoBackendMetalExt)
     @test Array(M.projection_gpu(MtlArray(host_weight), MtlArray(host_input))) ≈
           transpose(Float32.(host_weight)) * host_input rtol=2.0f-5 atol=2.0f-5
 
+    # Packed reads must preserve adjacent BF16 values and handle partial
+    # input tiles, two-row output tails, and odd-column fallback shapes.
+    for width in (1024, 1280, 1536, 2048, 6144), columns in (2, 6, 17, 32)
+        host_weight = Metal.BFloat16.(randn(Float32, width, columns))
+        host_weight[1:8, 1] .= Metal.BFloat16.([1, -2, 3, -4, 5, -6, 7, -8])
+        host_input = randn(Float32, width, 1)
+        actual = M.projection_gpu(MtlArray(host_weight), MtlArray(host_input))
+        @test Array(actual) ≈ transpose(Float32.(host_weight)) * host_input rtol=2.0f-5 atol=2.0f-5
+    end
+
     q = randn(Float32, 8, 3)
     norm = randn(Float32, 4)
     co = randn(Float32, 2, 5)
