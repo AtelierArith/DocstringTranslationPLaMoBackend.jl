@@ -8,6 +8,7 @@ const M = Base.get_extension(B, :DocstringTranslationPLaMoBackendMetalExt)
 
 include("metal_token.jl")
 include("metal_quantization.jl")
+include("metal_fast_decode.jl")
 
 function reduction_test_kernel!(output, input)
     lane = Int(thread_index_in_simdgroup())
@@ -314,8 +315,9 @@ end
 
     # Exercise partial SIMD groups and split boundaries repeatedly. Reusing a
     # larger, poisoned workspace must not read unused or stale partitions.
-    partial = MtlArray{Float32}(undef, 130, 4, 8)
-    for nkeys in (1, 3, 31, 32, 33, 64, 65, 127, 128, 129)
+    partial = MtlArray{Float32}(undef, 130, 4, 64)
+    for nkeys in
+        (1, 3, 31, 32, 33, 64, 65, 127, 128, 129, 191, 192, 193, 511, 512, 513, 2047, 2048)
         query_decode = randn(Float32, 128 * 4, 1)
         keys_decode = randn(Float32, 128 * 2, nkeys)
         values_decode = randn(Float32, 128 * 2, nkeys)

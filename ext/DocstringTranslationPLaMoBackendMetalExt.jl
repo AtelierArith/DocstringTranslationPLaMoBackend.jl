@@ -52,6 +52,19 @@ function rms_kernel!(output, input, weight, residual, eps, width, count)
 end
 
 function rms_norm_gpu!(output, x, weight, eps; residual = nothing)
+    if size(x, 2) == 1 &&
+       vector_norm_eligible(size(x, 1), output, x, weight) &&
+       (isnothing(residual) || vector_norm_eligible(size(x, 1), residual))
+        @metal threads=256 groups=1 u32_first_rms_kernel!(
+            output,
+            x,
+            weight,
+            residual,
+            eps,
+            Val(size(x, 1)),
+        )
+        return output
+    end
     @metal threads=128 groups=cld(size(x, 2), 4) rms_kernel!(
         output,
         x,
@@ -118,6 +131,28 @@ function dual_rms_kernel!(
 end
 
 function dual_rms_gpu!(output, normalized, input, residual, post_weight, pre_weight, eps)
+    if size(input, 2) == 1 && vector_norm_eligible(
+        size(input, 1),
+        output,
+        normalized,
+        input,
+        residual,
+        post_weight,
+        pre_weight,
+    )
+        @metal threads=256 groups=1 u32_vector_dual_rms_kernel!(
+            output,
+            normalized,
+            input,
+            residual,
+            post_weight,
+            pre_weight,
+            eps,
+            Val(size(input, 1)),
+            Val(8),
+        )
+        return output, normalized
+    end
     @metal threads=256 groups=size(input, 2) dual_rms_kernel!(
         output,
         normalized,
@@ -251,6 +286,35 @@ function rotate_qk_gpu!(
     isnothing(keys) == isnothing(values) ||
         throw(ArgumentError("keys and values must be provided together"))
     count = size(qkv, 2)
+    if rotate32_eligible(
+        qkv,
+        qnorm,
+        knorm,
+        cosines,
+        sines,
+        position,
+        qheads,
+        kheads,
+        keys,
+        values,
+    )
+        @metal threads=128 groups=cld((qheads + kheads) * count, 4) u32_rotate_qk_kernel!(
+            qkv,
+            keys,
+            values,
+            qnorm,
+            knorm,
+            eps,
+            cosines,
+            sines,
+            UInt32(position),
+            Val(length(qnorm)),
+            Val(qheads),
+            Val(kheads),
+            Val(count),
+        )
+        return qkv
+    end
     @metal threads=128 groups=cld((qheads + kheads) * count, 4) rotate_qk_kernel!(
         qkv,
         keys,
@@ -489,6 +553,34 @@ function launch_single_attention!(
     parts,
     ::Val{split},
 ) where {split}
+    if attention128_eligible(
+        storage,
+        query,
+        keys,
+        values,
+        position,
+        start,
+        window,
+        dim,
+        heads,
+        kv_heads,
+    )
+        @metal threads=128 groups=heads*parts attention128_kernel!(
+            storage,
+            query,
+            keys,
+            values,
+            UInt32(position),
+            UInt32(start),
+            full,
+            UInt32(window),
+            UInt32(heads ÷ kv_heads),
+            UInt32(nkeys),
+            UInt32(heads),
+            Val(split),
+        )
+        return nothing
+    end
     @metal threads=128 groups=heads*parts single_attention_kernel!(
         storage,
         query,
@@ -543,13 +635,36 @@ function single_attention_gpu!(
             parts,
             Val(true),
         )
-        @metal threads=256 groups=cld(dim*heads, 256) merge_attention_kernel!(
-            output,
-            storage,
-            dim,
-            heads,
-            parts,
-        )
+        if attention128_eligible(
+               storage,
+               query,
+               keys,
+               values,
+               position,
+               start,
+               window,
+               dim,
+               heads,
+               kv_heads,
+           ) &&
+           output isa MtlArray{Float32} &&
+           length(output) <= typemax(UInt32)
+            @metal threads=256 groups=cld(dim*heads, 256) u32_merge_attention_kernel!(
+                output,
+                storage,
+                UInt32(dim),
+                UInt32(heads),
+                UInt32(parts),
+            )
+        else
+            @metal threads=256 groups=cld(dim*heads, 256) merge_attention_kernel!(
+                output,
+                storage,
+                dim,
+                heads,
+                parts,
+            )
+        end
     else
         launch_single_attention!(
             output,
@@ -773,6 +888,7 @@ function attention_gpu(
 end
 
 include("metal_quantization.jl")
+include("metal_decode.jl")
 include("metal_token.jl")
 include("metal_model.jl")
 

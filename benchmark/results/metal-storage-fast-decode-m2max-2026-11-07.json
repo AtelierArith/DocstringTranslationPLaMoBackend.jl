@@ -1,0 +1,379 @@
+{
+  "julia": "1.13.3",
+  "metal": "1.12.0",
+  "julia_threads": 1,
+  "repetitions": 7,
+  "results": [
+    {
+      "storage": "bf16",
+      "hybrid_prefill": true,
+      "load_seconds": 2.528541792,
+      "weight_bytes": 1780482048,
+      "prefill_cache_bytes": 2239758336,
+      "other_model_bytes": 940032,
+      "model_array_bytes": 4021180416,
+      "prefill_tps": 5244.08383356294,
+      "decode_tps": 189.23774433387007,
+      "short_seconds": 0.050807084,
+      "short_text": "会議は10時に始まります。",
+      "prefill_samples": [
+        3462.6062198416803,
+        5260.165742891153,
+        5203.30491163528,
+        5260.390998287414,
+        5207.732799692613,
+        5321.29567563244,
+        5244.08383356294
+      ],
+      "decode_samples": [
+        189.96342604476575,
+        188.70344516469535,
+        189.5738342587306,
+        189.23774433387007,
+        189.5992005028313,
+        189.09467826355964,
+        188.9954683552514
+      ],
+      "short_samples": [
+        0.051600708,
+        0.050833583,
+        0.050807084,
+        0.050456334,
+        0.051295,
+        0.050773416,
+        0.050728417
+      ],
+      "quality": [
+        {
+          "source": "The meeting starts at ten.",
+          "text": "会議は10時に始まります。",
+          "finish": "stop",
+          "generated_tokens": 7
+        },
+        {
+          "source": "Return the sum of the elements in the array.",
+          "text": "配列の要素の合計を返してください。",
+          "finish": "stop",
+          "generated_tokens": 8
+        },
+        {
+          "source": "Compute the eigenvalues and eigenvectors of a real symmetric matrix.",
+          "text": "実対称行列の固有値と固有ベクトルを計算せよ。",
+          "finish": "stop",
+          "generated_tokens": 14
+        },
+        {
+          "source": "Set `check=false` to skip the validation step.",
+          "text": "検証ステップをスキップするには `check=false` を設定してください。",
+          "finish": "stop",
+          "generated_tokens": 13
+        },
+        {
+          "source": "The function returns `nothing` when the input is empty.",
+          "text": "この関数は、入力が空の場合に `nothing` を返します。",
+          "finish": "stop",
+          "generated_tokens": 15
+        },
+        {
+          "source": "A scalar is broadcast across every element of the array.",
+          "text": "スカラーは配列のすべての要素にブロードキャストされます。",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Throw an ArgumentError if the dimensions do not match.",
+          "text": "寸法が一致しない場合は ArgumentError をスローします。",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Allocate an uninitialized array with the specified element type and dimensions.",
+          "text": "指定された要素型と次元を持つ未初期化の配列を割り当てます。",
+          "finish": "stop",
+          "generated_tokens": 13
+        }
+      ]
+    },
+    {
+      "storage": "q8_0",
+      "hybrid_prefill": true,
+      "load_seconds": 3.438367625,
+      "weight_bytes": 945881088,
+      "prefill_cache_bytes": 2239758336,
+      "other_model_bytes": 940032,
+      "model_array_bytes": 3186579456,
+      "prefill_tps": 5332.77783564212,
+      "decode_tps": 249.36137674753866,
+      "short_seconds": 0.041252875,
+      "short_text": "会議は10時に始まります。",
+      "prefill_samples": [
+        5187.629465297657,
+        5309.193095975072,
+        5363.119203536575,
+        5326.00098339615,
+        5376.165467620763,
+        5362.697678253557,
+        5332.77783564212
+      ],
+      "decode_samples": [
+        250.19778819291227,
+        248.3197993675349,
+        249.31867536380065,
+        249.93601052343075,
+        249.352186914524,
+        249.36137674753866,
+        250.28177034557717
+      ],
+      "short_samples": [
+        0.041858417,
+        0.0412565,
+        0.041252875,
+        0.041411958,
+        0.041069458,
+        0.041084709,
+        0.041245542
+      ],
+      "quality": [
+        {
+          "source": "The meeting starts at ten.",
+          "text": "会議は10時に始まります。",
+          "finish": "stop",
+          "generated_tokens": 7
+        },
+        {
+          "source": "Return the sum of the elements in the array.",
+          "text": "配列の要素の合計を返してください。",
+          "finish": "stop",
+          "generated_tokens": 8
+        },
+        {
+          "source": "Compute the eigenvalues and eigenvectors of a real symmetric matrix.",
+          "text": "実対称行列の固有値と固有ベクトルを計算せよ。",
+          "finish": "stop",
+          "generated_tokens": 14
+        },
+        {
+          "source": "Set `check=false` to skip the validation step.",
+          "text": "検証ステップをスキップするには `check=false` を設定してください。",
+          "finish": "stop",
+          "generated_tokens": 13
+        },
+        {
+          "source": "The function returns `nothing` when the input is empty.",
+          "text": "この関数は、入力が空の場合に `nothing` を返します。",
+          "finish": "stop",
+          "generated_tokens": 15
+        },
+        {
+          "source": "A scalar is broadcast across every element of the array.",
+          "text": "スカラーは配列のすべての要素にブロードキャストされます。",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Throw an ArgumentError if the dimensions do not match.",
+          "text": "寸法が一致しない場合は ArgumentError をスローします。",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Allocate an uninitialized array with the specified element type and dimensions.",
+          "text": "指定された要素型と次元を持つ未初期化の配列を割り当てます。",
+          "finish": "stop",
+          "generated_tokens": 13
+        }
+      ]
+    },
+    {
+      "storage": "q4_0",
+      "hybrid_prefill": true,
+      "load_seconds": 3.255834584,
+      "weight_bytes": 500760576,
+      "prefill_cache_bytes": 2239758336,
+      "other_model_bytes": 940032,
+      "model_array_bytes": 2741458944,
+      "prefill_tps": 5358.600698552211,
+      "decode_tps": 386.7013011658917,
+      "short_seconds": 0.031002583,
+      "short_text": "会議は10時に始まります。",
+      "prefill_samples": [
+        5277.616001896643,
+        5205.976705287829,
+        5396.299378089144,
+        5357.666066719686,
+        5372.817948569959,
+        5366.20131639626,
+        5358.600698552211
+      ],
+      "decode_samples": [
+        387.53793065341773,
+        386.7013011658917,
+        385.4928209491255,
+        387.52502450414585,
+        386.294493490298,
+        388.00753583386,
+        382.42184143071944
+      ],
+      "short_samples": [
+        0.031594792,
+        0.0309815,
+        0.030977041,
+        0.031002583,
+        0.031127667,
+        0.030830875,
+        0.03107775
+      ],
+      "quality": [
+        {
+          "source": "The meeting starts at ten.",
+          "text": "会議は10時に始まります。",
+          "finish": "stop",
+          "generated_tokens": 7
+        },
+        {
+          "source": "Return the sum of the elements in the array.",
+          "text": "配列の要素の合計を返してください。",
+          "finish": "stop",
+          "generated_tokens": 8
+        },
+        {
+          "source": "Compute the eigenvalues and eigenvectors of a real symmetric matrix.",
+          "text": "実対称行列の固有値と固有ベクトルを計算せよ。",
+          "finish": "stop",
+          "generated_tokens": 14
+        },
+        {
+          "source": "Set `check=false` to skip the validation step.",
+          "text": "`check=false` を設定してバリデーションステップをスキップします。",
+          "finish": "stop",
+          "generated_tokens": 14
+        },
+        {
+          "source": "The function returns `nothing` when the input is empty.",
+          "text": "この関数は、入力が空の場合に `nothing` を返します。",
+          "finish": "stop",
+          "generated_tokens": 15
+        },
+        {
+          "source": "A scalar is broadcast across every element of the array.",
+          "text": "スカラーは配列のすべての要素にブロードキャストされます。",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Throw an ArgumentError if the dimensions do not match.",
+          "text": "寸法が一致しない場合は ArgumentError をスローします。",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Allocate an uninitialized array with the specified element type and dimensions.",
+          "text": "指定された要素型と寸法を持つ未初期化の配列を割り当てる。",
+          "finish": "stop",
+          "generated_tokens": 13
+        }
+      ]
+    },
+    {
+      "storage": "f32",
+      "hybrid_prefill": false,
+      "load_seconds": 1.663816709,
+      "weight_bytes": 3560964096,
+      "prefill_cache_bytes": 0,
+      "other_model_bytes": 940032,
+      "model_array_bytes": 3561904128,
+      "prefill_tps": 5100.270521536131,
+      "decode_tps": 96.40579609722224,
+      "short_seconds": 0.087760333,
+      "short_text": "会議は10時に始まります。",
+      "prefill_samples": [
+        5061.222404623933,
+        5046.472889992805,
+        5113.514427381464,
+        5114.919248412167,
+        5100.270521536131,
+        5105.805859710006,
+        5097.815936346121
+      ],
+      "decode_samples": [
+        96.00952289654754,
+        96.40579609722224,
+        96.99373716137283,
+        96.33488409265966,
+        96.48198783045552,
+        96.52526030242194,
+        96.22612547696414
+      ],
+      "short_samples": [
+        0.088233542,
+        0.087901375,
+        0.087643959,
+        0.087760333,
+        0.087920333,
+        0.087017375,
+        0.087328583
+      ],
+      "quality": [
+        {
+          "source": "The meeting starts at ten.",
+          "text": "会議は10時に始まります。",
+          "finish": "stop",
+          "generated_tokens": 7
+        },
+        {
+          "source": "Return the sum of the elements in the array.",
+          "text": "配列の要素の合計を返してください。",
+          "finish": "stop",
+          "generated_tokens": 8
+        },
+        {
+          "source": "Compute the eigenvalues and eigenvectors of a real symmetric matrix.",
+          "text": "実対称行列の固有値と固有ベクトルを計算せよ。",
+          "finish": "stop",
+          "generated_tokens": 14
+        },
+        {
+          "source": "Set `check=false` to skip the validation step.",
+          "text": "検証ステップをスキップするには `check=false` を設定してください。",
+          "finish": "stop",
+          "generated_tokens": 13
+        },
+        {
+          "source": "The function returns `nothing` when the input is empty.",
+          "text": "この関数は、入力が空の場合に `nothing` を返します。",
+          "finish": "stop",
+          "generated_tokens": 15
+        },
+        {
+          "source": "A scalar is broadcast across every element of the array.",
+          "text": "スカラーは配列のすべての要素にブロードキャストされます。",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Throw an ArgumentError if the dimensions do not match.",
+          "text": "寸法が一致しない場合は ArgumentError をスローします。",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Allocate an uninitialized array with the specified element type and dimensions.",
+          "text": "指定された要素型と次元を持つ未初期化の配列を割り当てます。",
+          "finish": "stop",
+          "generated_tokens": 13
+        }
+      ]
+    }
+  ],
+  "hardware": "Apple M2 Max, 38 GPU cores, 96 GiB unified memory",
+  "checkpoint": "cc8e88169807d5a272e8ff06db12eb0129b67f81",
+  "base_commit": "5d67e7d8b293f9c6b2108480b30277018a44be2b",
+  "note": "Uncommitted optimized decode kernels; sequential storage loads; Float32 activations, accumulation and KV.",
+  "allocations_q4": {
+    "host_bytes_per_decode_token": 89936,
+    "gpu_buffer_creations_per_decode_token": 0,
+    "gpu_buffer_creations_per_prefill_128": 3,
+    "alloccheck_findings_decode": 2461,
+    "alloccheck_dynamic_dispatches_decode": 235
+  }
+}

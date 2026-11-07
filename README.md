@@ -138,6 +138,14 @@ use Q8_0/Q4_0 reference rounding with an internal GPU layout. Quantization can
 change translation output. Activations, KV caches and accumulation remain
 Float32. Quantized storage requires Metal and is not available on CPU.
 
+On an M2 Max, the optimized Metal decode path measured about 189 token/s with
+BF16, 249 with Q8_0 and 387 with Q4_0 (Float32: 96), with one Julia thread.
+Q4_0 short translation took about 31 ms. In an alternating same-token comparison,
+llama.cpp with default Float16 KV and automatic Flash Attention reached about
+429 token/s versus Metal.jl's 387; the target of exceeding llama.cpp remains unmet.
+These are warm measurements, excluding model loading and compilation. See
+[benchmark details and output differences](benchmark/README.md#optimized-metal-decode).
+
 The expanded prefill cache contains the selected format's dequantized values.
 Set `prefill_storage=:native` to disable the cache; this expands one projection
 at a time during prefill. `:bf16` remains an alias for disabling this cache.
