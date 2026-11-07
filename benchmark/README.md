@@ -228,3 +228,7 @@ build/bin/llama-quantize --pure model-bf16.gguf model-q8.gguf Q8_0 4
 build/bin/llama-quantize --pure model-bf16.gguf model-q4.gguf Q4_0 4
 # Repeat the earlier inference and translation commands for each model file.
 ```
+
+The [recorded samples and outputs](results/metal-storage-m2max-2026-11-07.json)
+include the model revision, conditions, llama.cpp comparison, array payloads,
+separate-process RSS, setup times and allocation measurements.
