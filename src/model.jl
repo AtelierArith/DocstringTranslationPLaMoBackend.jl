@@ -16,12 +16,12 @@ const NATIVE_TRANSLATOR =
 const MODEL_OPTIONS = Ref((
     context_size = 4096,
     max_tokens = 1024,
-    weight_storage = :bf16,
+    weight_storage = :auto,
     device = :auto,
     prefill_storage = :auto,
 ))
 
-# Implemented by the optional Metal extension when Metal.jl is loaded.
+# Implemented by the MetalBackend submodule on Apple Silicon.
 function metal_translator end
 function metal_available end
 
@@ -93,15 +93,15 @@ function install_model!(; source_directory::Union{Nothing,AbstractString} = noth
 end
 
 """
-    configure_plamo!(; context_size=4096, max_tokens=1024, weight_storage=:bf16, device=:auto, prefill_storage=:auto)
+    configure_plamo!(; context_size=4096, max_tokens=1024, weight_storage=:auto, device=:auto, prefill_storage=:auto)
 
 Configure native Julia inference. The model stays in Scratch and loads lazily;
-changing settings releases the cached translator. `:bf16` retains original BF16
-weights; `:f32` uses expanded Float32 weights. Metal also supports optional
+changing settings releases the cached translator. `weight_storage=:auto` selects
+`:q4_0` on Metal and `:bf16` on CPU. `:bf16` retains original BF16
+weights; `:f32` uses expanded Float32 weights. Metal also supports
 `:q8_0` and `:q4_0` block quantization; these can change translation output.
-`device=:auto` uses Metal when
-Metal.jl has been loaded and a compatible GPU is available, otherwise it uses
-CPU. Use `device=:cpu` or `device=:metal` for explicit selection. On Metal,
+`device=:auto` uses Metal on Apple Silicon when a compatible GPU is available,
+otherwise it uses CPU. Use `device=:cpu` or `device=:metal` for explicit selection. On Metal,
 `prefill_storage=:f32` caches expanded weights for faster prefill;
 `:native` disables this cache (`:bf16` is a compatibility alias), and `:auto`
 checks available GPU and system memory.
@@ -112,15 +112,15 @@ translations raise an error rather than being cached as complete documentation.
 function configure_plamo!(;
     context_size::Integer = 4096,
     max_tokens::Integer = 1024,
-    weight_storage::Symbol = :bf16,
+    weight_storage::Symbol = :auto,
     device::Symbol = :auto,
     prefill_storage::Symbol = :auto,
 )
     1 <= context_size <= 32768 || throw(ArgumentError("context_size must be 1..32768"))
     1 <= max_tokens < context_size ||
         throw(ArgumentError("max_tokens must be positive and smaller than context_size"))
-    weight_storage in (:bf16, :f32, :q8_0, :q4_0) ||
-        throw(ArgumentError("weight_storage must be :bf16, :f32, :q8_0 or :q4_0"))
+    weight_storage in (:auto, :bf16, :f32, :q8_0, :q4_0) ||
+        throw(ArgumentError("weight_storage must be :auto, :bf16, :f32, :q8_0 or :q4_0"))
     device in (:auto, :cpu, :metal) ||
         throw(ArgumentError("device must be :auto, :cpu or :metal"))
     device === :cpu &&
@@ -141,6 +141,10 @@ function configure_plamo!(;
     nothing
 end
 
+"""Resolve `weight_storage=:auto`: Q4_0 on Metal, BF16 on CPU."""
+resolve_weight_storage(storage::Symbol, metal::Bool) =
+    storage === :auto ? (metal ? :q4_0 : :bf16) : storage
+
 function metal_selected()
     device = MODEL_OPTIONS[].device
     device === :metal && return true
@@ -157,15 +161,20 @@ end
 function native_translator()
     if isnothing(NATIVE_TRANSLATOR[])
         directory = verify_model(model_directory())
+        metal = metal_selected()
         options = MODEL_OPTIONS[]
-        if metal_selected()
+        options = merge(
+            options,
+            (weight_storage = resolve_weight_storage(options.weight_storage, metal),),
+        )
+        if metal
             applicable(metal_translator, directory, options) ||
-                throw(ArgumentError("Metal inference requires loading Metal.jl first"))
+                throw(ArgumentError("Metal inference requires Apple Silicon"))
             NATIVE_TRANSLATOR[] = metal_translator(directory, options)
         else
             options.weight_storage in (:q8_0, :q4_0) && throw(
                 ArgumentError(
-                    "quantized weight storage requires loading Metal.jl and a supported GPU",
+                    "quantized weight storage requires Metal on Apple Silicon with a supported GPU",
                 ),
             )
             NATIVE_TRANSLATOR[] = PLaMo.Translator(

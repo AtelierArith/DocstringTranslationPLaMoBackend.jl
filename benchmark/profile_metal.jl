@@ -5,7 +5,7 @@ using DocstringTranslationPLaMoBackend, Metal
 function profile_metal(phase)
     phase in ("prefill", "decode") || error("usage: profile_metal.jl [prefill|decode]")
     backend = DocstringTranslationPLaMoBackend
-    extension = Base.get_extension(backend, :DocstringTranslationPLaMoBackendMetalExt)
+    extension = backend.MetalBackend
     directory = backend.model_directory()
     backend.verify_model(directory)
     hybrid = extension.use_hybrid_prefill(

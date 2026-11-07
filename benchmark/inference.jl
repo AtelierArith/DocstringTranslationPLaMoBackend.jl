@@ -25,10 +25,7 @@ function run_benchmark(prompt_tokens, generated_tokens, repetitions)
     device in ("cpu", "metal") ||
         throw(ArgumentError("PLAMO_BENCH_DEVICE must be cpu or metal"))
     if device == "metal"
-        metal = Base.get_extension(
-            DocstringTranslationPLaMoBackend,
-            :DocstringTranslationPLaMoBackendMetalExt,
-        )
+        metal = DocstringTranslationPLaMoBackend.MetalBackend
         prefill = Symbol(get(ENV, "PLAMO_BENCH_PREFILL", "auto"))
         prefill in (:auto, :bf16, :native, :f32) ||
             throw(ArgumentError("PLAMO_BENCH_PREFILL must be auto, native, bf16 or f32"))

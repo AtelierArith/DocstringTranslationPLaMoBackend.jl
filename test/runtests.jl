@@ -39,6 +39,23 @@ const Native = B.PLaMo
         @test_throws ArgumentError configure_plamo!(; device = :cpu, weight_storage = storage)
     end
     configure_plamo!()
+    @testset "Apple Silicon defaults" begin
+        @test haskey(project["deps"], "Metal")
+        @test !haskey(project, "weakdeps")
+        @test isdefined(B, :MetalBackend) == (Sys.isapple() && Sys.ARCH === :aarch64)
+        @test B.MODEL_OPTIONS[].weight_storage === :auto
+        configure_plamo!(; context_size = 2048)
+        @test B.MODEL_OPTIONS[].weight_storage === :auto
+        configure_plamo!(; device = :cpu)
+        @test B.MODEL_OPTIONS[].weight_storage === :auto
+        @test B.resolve_weight_storage(:auto, true) === :q4_0
+        @test B.resolve_weight_storage(:auto, false) === :bf16
+        for storage in (:bf16, :f32, :q8_0, :q4_0)
+            @test B.resolve_weight_storage(storage, true) === storage
+        end
+        @test B.resolve_weight_storage(:f32, false) === :f32
+        configure_plamo!()
+    end
     @testset "Inference device selection" begin
         configure_plamo!(; device = :cpu)
         @test B.MODEL_OPTIONS[].device === :cpu
