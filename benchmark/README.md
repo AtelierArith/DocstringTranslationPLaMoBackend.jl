@@ -79,7 +79,7 @@ GGUF and build llama.cpp with Metal. For example, with llama.cpp commit
 ```sh
 python convert_hf_to_gguf.py "$MODEL_DIR" --outtype bf16 --outfile model-bf16.gguf
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON
-cmake --build build --target llama-bench -j 8
+cmake --build build --target llama-bench llama-completion -j 8
 build/bin/llama-bench -m model-bf16.gguf -p 128 -n 0 -r 3 -ub 128 -fa off
 build/bin/llama-bench -m model-bf16.gguf -p 0 -n 64 -d 128 -r 3 -ub 128 -fa off
 ```
@@ -117,8 +117,9 @@ On 2026-11-07, Apple M2 Max (38 GPU cores, 96 GB), macOS 26.7.1,
 Julia 1.13.3 / Metal 1.12.0, and llama.cpp `fd27b203` produced the following
 warm results. Both used the pinned unquantized BF16 checkpoint and Float32 KV
 cache. Julia used one thread and production token output; llama.cpp used eight
-CPU threads with Metal and flash attention disabled. Metal used its automatic
-Float32 prefill cache. Loading and compilation were excluded.
+CPU threads with Metal. Synthetic llama-bench runs explicitly disabled flash
+attention; short translations kept llama-completion's default automatic setting.
+Metal used its automatic Float32 prefill cache. Loading and compilation were excluded.
 
 | Workload | Metal.jl | llama.cpp |
 | --- | ---: | ---: |
