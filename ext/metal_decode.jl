@@ -173,6 +173,47 @@ function projection_gpu!(result, weight::QuantizedMatrix{4}, input)
     return invoke(projection_gpu!, Tuple{Any,QuantizedMatrix,Any}, result, weight, input)
 end
 
+# One four-element vector per thread keeps both normalization stages in
+# registers at the model's 1536-wide hidden dimension. Separate reduction
+# slots let the second stage proceed without a barrier to reuse the first.
+function register_dual_rms1536_kernel!(
+    output, normalized, input, residual, post_weight, pre_weight, eps,
+)
+    tid = UInt32(thread_index_in_threadgroup())
+    lane = UInt32(thread_index_in_simdgroup())
+    simd = UInt32(simdgroup_index_in_threadgroup())
+    i = (tid-UInt32(1))*UInt32(4)+UInt32(1)
+    active = i <= UInt32(1533)
+    partial = MtlThreadGroupArray(Float32, 32)
+    x = active ? vload(Vec{4,Float32}, pointer(input, i)) : Vec{4,Float32}(0.0f0)
+    square = muladd(x, x, Vec{4,Float32}(0.0f0))
+    total = simd_sum_f32(sum(square))
+    lane == UInt32(1) && (@inbounds partial[simd] = total)
+    threadgroup_barrier(Metal.MemoryFlagThreadGroup)
+    total = lane <= UInt32(16) ? (@inbounds partial[lane]) : 0.0f0
+    total = simd_sum_f32(total)
+    scale = inv(sqrt(simd_shuffle(total, UInt32(1))/1536.0f0+eps))
+    value = Vec{4,Float32}(0.0f0)
+    if active
+        post = vload(Vec{4,Float32}, pointer(post_weight, i))
+        skip = vload(Vec{4,Float32}, pointer(residual, i))
+        value = (x*scale)*post+skip
+        P.SIMD.vstore(value, pointer(output, i))
+    end
+    square = muladd(value, value, Vec{4,Float32}(0.0f0))
+    total = simd_sum_f32(sum(square))
+    lane == UInt32(1) && (@inbounds partial[simd+UInt32(16)] = total)
+    threadgroup_barrier(Metal.MemoryFlagThreadGroup)
+    total = lane <= UInt32(16) ? (@inbounds partial[lane+UInt32(16)]) : 0.0f0
+    total = simd_sum_f32(total)
+    scale2 = inv(sqrt(simd_shuffle(total, UInt32(1))/1536.0f0+eps))
+    if active
+        pre = vload(Vec{4,Float32}, pointer(pre_weight, i))
+        P.SIMD.vstore((value*scale2)*pre, pointer(normalized, i))
+    end
+    return
+end
+
 function u32_vector_dual_rms_kernel!(
     output,
     normalized,

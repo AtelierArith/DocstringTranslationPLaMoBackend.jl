@@ -209,3 +209,26 @@ end
     )
     @test Array(out) ≈ expected rtol=3.0f-5 atol=3.0f-5
 end
+
+
+@testset "Register-resident dual normalization" begin
+    width = 1536
+    for (zero_input, alias_input) in ((false, false), (true, false), (false, true)),
+        residual_scale in (0.0f0, 0.2f0, 2.0f0)
+        input = zero_input ? zeros(Float32, width, 1) :
+                reshape(Float32.(sin.(1:width)), :, 1)
+        residual = reshape(Float32.(cos.(1:width)), :, 1) .* residual_scale
+        post = Float32.(sin.(1:width)) .+ 0.5f0
+        pre = Float32.(cos.(1:width)) .+ 0.5f0
+        expected = P.rms_norm(input, post, 1.0f-5) .+ residual
+        device_input = MtlArray(input)
+        output = alias_input ? device_input : MtlArray{Float32}(undef, width, 1)
+        normalized = similar(output)
+        @metal debug_level=M.decode_debug_level() threads=512 groups=1 M.register_dual_rms1536_kernel!(
+            output, normalized, device_input, MtlArray(residual),
+            MtlArray(post), MtlArray(pre), 1.0f-5,
+        )
+        @test Array(output) ≈ expected rtol=3.0f-5 atol=3.0f-5
+        @test Array(normalized) ≈ P.rms_norm(expected, pre, 1.0f-5) rtol=3.0f-5 atol=3.0f-5
+    end
+end

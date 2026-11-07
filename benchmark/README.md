@@ -349,3 +349,50 @@ real-model BF16/Float32/quantized comparisons, long-context checks and both GPU
 diagnostic levels passed. The automatic Float32-prefill-cache test was skipped
 in the full run because available memory was below its threshold; the explicit
 Q4/Q8 cache-enabled model tests passed separately.
+
+
+### Register-resident dual RMS normalization
+
+At hidden width 1536, decode retains one four-element input/intermediate vector
+per thread across both normalization stages. Sixteen SIMD groups compute the
+reductions using separate shared-memory slots, requiring two barriers instead
+of three. This removes the second input load and the intermediate output reload.
+Other widths retain the previous kernel. Weights, activation/KV precision and
+strict Float32 arithmetic are unchanged; the reduction grouping changes.
+
+A fresh seven-sample four-format run on the same M2 Max, Julia 1.13.3 and
+Metal 1.12.0 with one Julia thread measured:
+
+| Median | Float32 | BF16 | Q8_0 | Q4_0 |
+| --- | ---: | ---: | ---: | ---: |
+| Prefill, 128 tokens (token/s) | 5,131 | 5,344 | 5,169 | 5,554 |
+| Decode, 64 after 128 cached tokens (token/s) | 91.7 | 189.6 | 245.5 | 403.5 |
+| Short translation, 21 input / 7 output tokens (ms) | 91.6 | 50.5 | 40.1 | 30.4 |
+
+[Raw samples and translation outputs](results/metal-storage-register-rms-m2max-2026-11-07.json)
+retain setup timings and memory payloads. All eight output strings for each format
+matched its preceding implementation. This small sample is a regression check,
+not a general quality evaluation. Variations between runs affect the medians;
+the preceding tables retain their original results.
+
+The corresponding eleven-sample alternating comparison against the same llama.cpp
+commit/default configuration measured **405.2 token/s for Julia versus 421.5 for
+llama.cpp**: about 4% more Julia throughput is still needed to match it.
+[Unfiltered alternating samples](results/metal-llama-register-rms-m2max-2026-11-07.json)
+also include Float32-KV results (386.2 versus 374.2), which had substantial timing
+variation and do not replace the default reference. Context, token stream,
+synchronization and sampling scopes remain the same as above.
+
+Warm host allocation is 89,184 bytes/token, down from 90,720 at the diagnostic
+checkpoint. AllocCheck reports 2,490 potential findings, including 236 unresolved
+dispatches; these include dependency/runtime paths and do not imply allocation
+freedom. Metal profiling still found zero new GPU buffers during decode.
+CPU tests and all optional real-model GPU suites passed, including cache-enabled,
+quantized and long-context paths. The focused `-g2` tests also check zero input
+and input/output aliasing.
+
+llama.cpp-inspired variants were measured rather than assumed faster: the current
+four-output-row Q4 tiling beat one/two/eight/sixteen-row variants; explicit Q4
+software prefetching and a shared-memory SIMD-matrix GEMV prototype did not improve
+throughput and were not adopted. Keeping intermediates in registers and separating
+reduction scratch slots provided the useful improvement here.

@@ -145,6 +145,12 @@ function dual_rms_gpu!(output, normalized, input, residual, post_weight, pre_wei
         post_weight,
         pre_weight,
     )
+        if size(input, 1) == 1536
+            @metal debug_level=decode_debug_level() threads=512 groups=1 register_dual_rms1536_kernel!(
+                output, normalized, input, residual, post_weight, pre_weight, eps,
+            )
+            return output, normalized
+        end
         @metal debug_level=decode_debug_level() threads=256 groups=1 u32_vector_dual_rms_kernel!(
             output,
             normalized,

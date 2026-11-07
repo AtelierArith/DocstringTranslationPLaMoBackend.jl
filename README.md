@@ -98,8 +98,6 @@ needed for Metal. Metal.jl 1.12 or newer is an optional dependency.
 Decode kernels omit GPU exception details by default while still reporting
 `Metal.KernelException`. Run Julia with `-g2` to retain full device diagnostics.
 This setting does not enable fast math or change inference precision.
-A subsequent Q4 comparison measured 396 token/s versus llama.cpp’s 426 token/s;
-exceeding its default configuration remains an open performance goal.
 
 The GPU path retains the pinned BF16 weights and uses Float32 activations and
 accumulation. For faster prompt processing, `prefill_storage=:auto` additionally
@@ -143,13 +141,14 @@ use Q8_0/Q4_0 reference rounding with an internal GPU layout. Quantization can
 change translation output. Activations, KV caches and accumulation remain
 Float32. Quantized storage requires Metal and is not available on CPU.
 
-On an M2 Max, the optimized Metal decode path measured about 189 token/s with
-BF16, 249 with Q8_0 and 387 with Q4_0 (Float32: 96), with one Julia thread.
-Q4_0 short translation took about 31 ms. In an alternating same-token comparison,
-llama.cpp with default Float16 KV and automatic Flash Attention reached about
-429 token/s versus Metal.jl's 387; the target of exceeding llama.cpp remains unmet.
+On an M2 Max, the optimized Metal decode path measured about 190 token/s with
+BF16, 246 with Q8_0 and 404 with Q4_0 (Float32: 92), with one Julia thread.
+Q4_0 short translation took about 30 ms. In a separate alternating same-token
+comparison, llama.cpp with default Float16 KV and automatic Flash Attention
+reached about 422 token/s versus Metal.jl's 405; the target of exceeding llama.cpp
+remains unmet (about 4% more throughput is needed).
 These are warm measurements, excluding model loading and compilation. See
-[benchmark details and output differences](benchmark/README.md#optimized-metal-decode).
+[benchmark details and output differences](benchmark/README.md#register-resident-dual-rms-normalization).
 
 The expanded prefill cache contains the selected format's dequantized values.
 Set `prefill_storage=:native` to disable the cache; this expands one projection

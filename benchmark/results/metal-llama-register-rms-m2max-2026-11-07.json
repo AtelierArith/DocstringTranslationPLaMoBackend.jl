@@ -1,0 +1,88 @@
+{
+  "julia": "1.13.3",
+  "metal": "1.12.0",
+  "julia_threads": 1,
+  "repetitions": 11,
+  "context": 512,
+  "prefill_tokens": 128,
+  "decode_tokens": 64,
+  "results": [
+    {
+      "label": "default-f16-auto",
+      "julia_samples": [
+        399.92407691352344,
+        407.377782225551,
+        400.78591613241593,
+        404.960023770141,
+        408.82497512284056,
+        409.32897051755646,
+        405.21054157249955,
+        408.6954190620422,
+        411.174526072853,
+        387.23125039445404,
+        397.52684635443285
+      ],
+      "llama_samples": [
+        425.02959434577815,
+        426.07702435369055,
+        419.0524830496545,
+        414.05088135420516,
+        424.3460820245594,
+        434.38803268028767,
+        423.3990842340901,
+        421.545706936366,
+        365.8116605976321,
+        389.0222776038659,
+        418.8029433994366
+      ],
+      "julia_median": 405.21054157249955,
+      "llama_median": 421.545706936366
+    },
+    {
+      "label": "f32-fa",
+      "julia_samples": [
+        406.388446701571,
+        359.8780912965733,
+        372.1959917097065,
+        400.1670497349118,
+        392.4128399884773,
+        323.12454813998124,
+        386.1538689703416,
+        351.1260034865715,
+        260.6138640663006,
+        405.58738962390726,
+        412.1834551016645
+      ],
+      "llama_samples": [
+        386.4504809539269,
+        388.4684570987667,
+        365.68163556825283,
+        374.7972288429892,
+        317.9803604597543,
+        363.13249872510704,
+        379.34280909146963,
+        275.0898124180192,
+        358.4421760269538,
+        374.2389135376541,
+        388.7158037293248
+      ],
+      "julia_median": 386.1538689703416,
+      "llama_median": 374.2389135376541
+    }
+  ],
+  "gpu_debug_level": 0,
+  "fastmath": false,
+  "llama_commit": "fd27b2034905f8dadd8bd6d2cc44595f4929d391",
+  "llama_cpu_threads": 8,
+  "change": "register-resident dual RMS at hidden width1536",
+  "scope": "128 zero-token prefill plus64 synchronized zero-token decode calls; Julia includes greedy token selection; C++ does not sample",
+  "allocation_diagnostics": {
+    "alloccheck_version": "0.2.8",
+    "warm_host_bytes_per_decode": 89184,
+    "potential_findings": 2490,
+    "potential_allocation_sites": 1262,
+    "allocating_runtime_calls": 992,
+    "unresolved_dispatches": 236,
+    "gpu_buffer_creation_calls_per_decode": 0
+  }
+}
