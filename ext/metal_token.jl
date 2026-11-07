@@ -40,7 +40,7 @@ function token_partials_kernel!(partials, logits, count)
 end
 
 function gpu_token!(logits, partials)
-    @metal threads=256 groups=length(partials) token_partials_kernel!(
+    @metal debug_level=decode_debug_level() threads=256 groups=length(partials) token_partials_kernel!(
         partials,
         logits,
         length(logits),

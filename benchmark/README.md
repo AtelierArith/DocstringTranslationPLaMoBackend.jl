@@ -188,8 +188,8 @@ On the same M2 Max environment as above, the production implementation measured:
 | llama.cpp short translation | 64.4 ms | 61.6 ms | 48.6 ms |
 
 Q8_0 improved Metal decode by about 32% and short translation by about 19%
-relative to BF16 in this run. Q4_0 currently reduces storage without improving
-Metal decode; its decode performance remains below llama.cpp's Q4_0 kernel.
+relative to BF16 in this run. In this earlier implementation, Q4_0 reduced storage without improving
+Metal decode. The optimized implementation below supersedes these Metal timings.
 The earlier timer/workload caveats apply, and other CPU work was present.
 llama.cpp used the same pinned checkpoint, `--pure` Q8_0/Q4_0 quantization,
 Float32 KV and the earlier command settings. Payload and scale comparisons
@@ -232,3 +232,167 @@ build/bin/llama-quantize --pure model-bf16.gguf model-q4.gguf Q4_0 4
 The [recorded samples and outputs](results/metal-storage-m2max-2026-11-07.json)
 include the model revision, conditions, llama.cpp comparison, array payloads,
 separate-process RSS, setup times and allocation measurements.
+
+## Optimized Metal decode
+
+The unsigned 32-bit Q4 matvec shares activations across four output rows and
+masks packed nibbles without per-element shifts. One-token normalization uses
+vector loads; dimension-128 attention preloads queries and uses two threadgroup
+barriers per partition. Bounds/layout guards retain the generic kernels for
+unsupported shapes and strided inputs. Weights, Float32 activations and Float32
+KV precision are unchanged.
+
+Fresh sequential measurements on the same M2 Max / Julia 1.13.3 / Metal 1.12.0,
+with `JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1`, seven warm samples per format:
+
+| Median | Float32 | BF16 | Q8_0 | Q4_0 |
+| --- | ---: | ---: | ---: | ---: |
+| Prefill, 128 tokens (token/s) | 5,100 | 5,244 | 5,333 | 5,359 |
+| Decode, 64 after 128 cached tokens (token/s) | 96 | 189 | 249 | 387 |
+| Short translation, 21 input / 7 output tokens (ms) | 87.8 | 50.8 | 41.3 | 31.0 |
+| Weight array payload (GiB) | 3.316 | 1.658 | 0.881 | 0.466 |
+| Model arrays including prefill cache (GiB) | 3.317 | 3.745 | 2.968 | 2.553 |
+
+[Raw samples and all eight translation outputs](results/metal-storage-fast-decode-m2max-2026-11-07.json)
+include model setup timings. Memory counts exclude request KV/workspace, allocator
+padding and temporary allocations. Quantized formats use an expanded Float32
+prefill cache; Float32 uses its original weights. BF16/Q8/Float32 matched all
+eight BF16 strings; Q4 matched six. The two differences are wording changes,
+not an evaluation demonstrating general translation quality.
+
+A separate same-process bridge to llama.cpp commit
+`fd27b2034905f8dadd8bd6d2cc44595f4929d391` alternated the two implementations
+on identical token IDs (128 zeros, followed by 64 zero-token decode calls),
+synchronizing every token. The Q4_0 asset uses `--pure` quantization of the same
+checkpoint. With context 512, llama.cpp default Float16 KV and automatic Flash
+Attention, eleven samples gave medians **429 token/s for llama.cpp and 387 token/s
+for Metal.jl**. [Alternating raw samples](results/metal-llama-alternating-m2max-2026-11-07.json)
+include both this reference and Float32-KV/Flash-Attention-on results (389 versus
+381 token/s). llama.cpp used eight CPU threads (`n_threads=n_threads_batch=8`),
+while Julia used one thread. Julia also performed its production greedy token selection;
+llama.cpp's synthetic loop did not sample tokens. The kernels improve the old
+Q4 decode result by about 2.3 times, but do not yet exceed this stronger llama.cpp
+reference. The older Flash-Attention-disabled numbers above are not the target.
+
+AllocCheck 0.2.8 still reports 2,461 potential findings for the Q4 decode entry
+(235 unresolved dispatches, including dependency/runtime paths). Warm Julia host
+allocation is 89,936 bytes/token; this is not an allocation-free host path.
+Metal profiling found zero GPU buffer creations per decode and three per
+128-token prefill. These diagnostics exclude model/state setup.
+
+Reproduce the four-format comparison with:
+
+```sh
+PLAMO_BENCH_JSON=storage.json JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  julia --startup-file=no --project=benchmark benchmark/compare_storage.jl bf16 q8_0 q4_0 f32
+```
+
+The alternating comparison requires a local llama.cpp build and a matching
+pure Q4_0 GGUF. The bridge is benchmark-only; the package does not call llama.cpp.
+Compile it against that checkout (replace `/path/to/llama.cpp`):
+
+```sh
+c++ -std=c++17 -O3 -dynamiclib \
+  -I/path/to/llama.cpp/include -I/path/to/llama.cpp/ggml/include \
+  benchmark/llama_decode_bridge.cpp -L/path/to/llama.cpp/build/bin \
+  -Wl,-rpath,/path/to/llama.cpp/build/bin -lllama -o /tmp/plamo-llama-bridge.dylib
+PLAMO_LLAMA_BENCH_LIBRARY=/tmp/plamo-llama-bridge.dylib \
+PLAMO_BENCH_JSON=alternating.json JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  julia --startup-file=no --project=benchmark benchmark/compare_llama_decode.jl model-q4.gguf
+```
+
+The bridge uses the llama.cpp API at the commit above. Later API revisions may
+require rebuilding or adapting it. The first comparison uses default Float16 KV
+and automatic Flash Attention; the second uses Float32 KV and Flash Attention on.
+Neither performs greedy sampling in the C++ loop. Use translation benchmarks
+separately to measure sampling, prompt formatting and end-to-end output.
+
+
+### Decode diagnostic overhead
+
+Hot decode kernels use Metal compiler `debug_level=0` by default, preserving
+`Metal.KernelException` signaling without recording exception descriptions.
+Run `julia -g2` to restore device exception types, positions and stack traces.
+The backend queries the process setting at runtime, including when using a
+precompiled package. Arithmetic and bounds checks are unchanged; this does not
+enable fast math. A regression test checks division-by-zero detection and a
+successful GPU launch immediately after the reported exception. The focused
+kernel suite also passes under `julia -g2`, including nonempty exception type
+and backtrace checks. To exercise both policies:
+
+```sh
+julia --project=test/metal test/metal.jl
+julia -g2 --project=test/metal test/metal.jl
+```
+
+
+With this setting, a fresh eleven-sample alternating run measured Q4 decode
+medians of **396.4 token/s for Julia and 426.3 token/s for llama.cpp** with its
+default Float16 KV / automatic Flash Attention. Julia remains about 7% behind
+that reference (it needs about 7.5% more throughput to match it). With Float32 KV
+and Flash Attention enabled in llama.cpp, the medians were 394.1 versus 389.9.
+The default comparison remains the performance target; the Float32-KV result
+does not establish overall superiority. The earlier four-format table retains
+its original measurements.
+[Raw samples](results/metal-llama-debug0-m2max-2026-11-07.json) use the same
+checkpoint, bridge, context, token IDs, synchronization and sampling scopes as
+above. CPU `-O3`, global fast math and reduced activation/KV precision are not
+part of this change.
+
+
+The updated Q4 diagnostic run reports 90,720 warm host bytes/token (previously
+89,936), zero GPU buffer-creation calls per decode, and 2,485 AllocCheck potential
+findings including 236 unresolved dispatches. Runtime/compiler paths are included;
+these static counts are not executed allocation counts. The 784-byte host increase
+is retained alongside the measured throughput improvement. Standard CPU tests,
+real-model BF16/Float32/quantized comparisons, long-context checks and both GPU
+diagnostic levels passed. The automatic Float32-prefill-cache test was skipped
+in the full run because available memory was below its threshold; the explicit
+Q4/Q8 cache-enabled model tests passed separately.
+
+
+### Register-resident dual RMS normalization
+
+At hidden width 1536, decode retains one four-element input/intermediate vector
+per thread across both normalization stages. Sixteen SIMD groups compute the
+reductions using separate shared-memory slots, requiring two barriers instead
+of three. This removes the second input load and the intermediate output reload.
+Other widths retain the previous kernel. Weights, activation/KV precision and
+strict Float32 arithmetic are unchanged; the reduction grouping changes.
+
+A fresh seven-sample four-format run on the same M2 Max, Julia 1.13.3 and
+Metal 1.12.0 with one Julia thread measured:
+
+| Median | Float32 | BF16 | Q8_0 | Q4_0 |
+| --- | ---: | ---: | ---: | ---: |
+| Prefill, 128 tokens (token/s) | 5,131 | 5,344 | 5,169 | 5,554 |
+| Decode, 64 after 128 cached tokens (token/s) | 91.7 | 189.6 | 245.5 | 403.5 |
+| Short translation, 21 input / 7 output tokens (ms) | 91.6 | 50.5 | 40.1 | 30.4 |
+
+[Raw samples and translation outputs](results/metal-storage-register-rms-m2max-2026-11-07.json)
+retain setup timings and memory payloads. All eight output strings for each format
+matched its preceding implementation. This small sample is a regression check,
+not a general quality evaluation. Variations between runs affect the medians;
+the preceding tables retain their original results.
+
+The corresponding eleven-sample alternating comparison against the same llama.cpp
+commit/default configuration measured **405.2 token/s for Julia versus 421.5 for
+llama.cpp**: about 4% more Julia throughput is still needed to match it.
+[Unfiltered alternating samples](results/metal-llama-register-rms-m2max-2026-11-07.json)
+also include Float32-KV results (386.2 versus 374.2), which had substantial timing
+variation and do not replace the default reference. Context, token stream,
+synchronization and sampling scopes remain the same as above.
+
+Warm host allocation is 89,184 bytes/token, down from 90,720 at the diagnostic
+checkpoint. AllocCheck reports 2,490 potential findings, including 236 unresolved
+dispatches; these include dependency/runtime paths and do not imply allocation
+freedom. Metal profiling still found zero new GPU buffers during decode.
+CPU tests and all optional real-model GPU suites passed, including cache-enabled,
+quantized and long-context paths. The focused `-g2` tests also check zero input
+and input/output aliasing.
+
+llama.cpp-inspired variants were measured rather than assumed faster: the current
+four-output-row Q4 tiling beat one/two/eight/sixteen-row variants; explicit Q4
+software prefetching and a shared-memory SIMD-matrix GEMV prototype did not improve
+throughput and were not adopted. Keeping intermediates in registers and separating
+reduction scratch slots provided the useful improvement here.

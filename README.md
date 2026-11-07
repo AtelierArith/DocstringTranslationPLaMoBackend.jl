@@ -95,6 +95,9 @@ If you load Metal after the CPU model has already been loaded, call
 selection reports an error if Metal is unavailable. GPU requests and Markdown
 traversal run without Julia thread parallelism; `JULIA_NUM_THREADS=8` is not
 needed for Metal. Metal.jl 1.12 or newer is an optional dependency.
+Decode kernels omit GPU exception details by default while still reporting
+`Metal.KernelException`. Run Julia with `-g2` to retain full device diagnostics.
+This setting does not enable fast math or change inference precision.
 
 The GPU path retains the pinned BF16 weights and uses Float32 activations and
 accumulation. For faster prompt processing, `prefill_storage=:auto` additionally
@@ -137,6 +140,15 @@ additional model download or GGUF conversion is needed. The quantized values
 use Q8_0/Q4_0 reference rounding with an internal GPU layout. Quantization can
 change translation output. Activations, KV caches and accumulation remain
 Float32. Quantized storage requires Metal and is not available on CPU.
+
+On an M2 Max, the optimized Metal decode path measured about 190 token/s with
+BF16, 246 with Q8_0 and 404 with Q4_0 (Float32: 92), with one Julia thread.
+Q4_0 short translation took about 30 ms. In a separate alternating same-token
+comparison, llama.cpp with default Float16 KV and automatic Flash Attention
+reached about 422 token/s versus Metal.jl's 405; the target of exceeding llama.cpp
+remains unmet (about 4% more throughput is needed).
+These are warm measurements, excluding model loading and compilation. See
+[benchmark details and output differences](benchmark/README.md#register-resident-dual-rms-normalization).
 
 The expanded prefill cache contains the selected format's dequantized values.
 Set `prefill_storage=:native` to disable the cache; this expands one projection

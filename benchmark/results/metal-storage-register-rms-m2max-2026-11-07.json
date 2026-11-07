@@ -1,0 +1,371 @@
+{
+  "julia": "1.13.3",
+  "metal": "1.12.0",
+  "julia_threads": 1,
+  "repetitions": 7,
+  "results": [
+    {
+      "storage": "bf16",
+      "hybrid_prefill": true,
+      "load_seconds": 2.821979375,
+      "weight_bytes": 1780482048,
+      "prefill_cache_bytes": 2239758336,
+      "other_model_bytes": 940032,
+      "model_array_bytes": 4021180416,
+      "prefill_tps": 5344.272390883423,
+      "decode_tps": 189.56943585729456,
+      "short_seconds": 0.050485625,
+      "short_text": "\u4f1a\u8b70\u306f10\u6642\u306b\u59cb\u307e\u308a\u307e\u3059\u3002",
+      "prefill_samples": [
+        3465.469332572807,
+        5435.224774569806,
+        5364.626990779548,
+        5065.20301294104,
+        5378.283005840017,
+        5205.041635860004,
+        5344.272390883423
+      ],
+      "decode_samples": [
+        190.67469191021624,
+        189.56943585729456,
+        189.70239609628513,
+        187.6071775621675,
+        190.87299042801777,
+        189.24121805725036,
+        189.51164108567963
+      ],
+      "short_samples": [
+        0.050699,
+        0.05177075,
+        0.050799417,
+        0.050485625,
+        0.049777042,
+        0.050217375,
+        0.04973875
+      ],
+      "quality": [
+        {
+          "source": "The meeting starts at ten.",
+          "text": "\u4f1a\u8b70\u306f10\u6642\u306b\u59cb\u307e\u308a\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 7
+        },
+        {
+          "source": "Return the sum of the elements in the array.",
+          "text": "\u914d\u5217\u306e\u8981\u7d20\u306e\u5408\u8a08\u3092\u8fd4\u3057\u3066\u304f\u3060\u3055\u3044\u3002",
+          "finish": "stop",
+          "generated_tokens": 8
+        },
+        {
+          "source": "Compute the eigenvalues and eigenvectors of a real symmetric matrix.",
+          "text": "\u5b9f\u5bfe\u79f0\u884c\u5217\u306e\u56fa\u6709\u5024\u3068\u56fa\u6709\u30d9\u30af\u30c8\u30eb\u3092\u8a08\u7b97\u305b\u3088\u3002",
+          "finish": "stop",
+          "generated_tokens": 14
+        },
+        {
+          "source": "Set `check=false` to skip the validation step.",
+          "text": "\u691c\u8a3c\u30b9\u30c6\u30c3\u30d7\u3092\u30b9\u30ad\u30c3\u30d7\u3059\u308b\u306b\u306f `check=false` \u3092\u8a2d\u5b9a\u3057\u3066\u304f\u3060\u3055\u3044\u3002",
+          "finish": "stop",
+          "generated_tokens": 13
+        },
+        {
+          "source": "The function returns `nothing` when the input is empty.",
+          "text": "\u3053\u306e\u95a2\u6570\u306f\u3001\u5165\u529b\u304c\u7a7a\u306e\u5834\u5408\u306b `nothing` \u3092\u8fd4\u3057\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 15
+        },
+        {
+          "source": "A scalar is broadcast across every element of the array.",
+          "text": "\u30b9\u30ab\u30e9\u30fc\u306f\u914d\u5217\u306e\u3059\u3079\u3066\u306e\u8981\u7d20\u306b\u30d6\u30ed\u30fc\u30c9\u30ad\u30e3\u30b9\u30c8\u3055\u308c\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Throw an ArgumentError if the dimensions do not match.",
+          "text": "\u5bf8\u6cd5\u304c\u4e00\u81f4\u3057\u306a\u3044\u5834\u5408\u306f ArgumentError \u3092\u30b9\u30ed\u30fc\u3057\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Allocate an uninitialized array with the specified element type and dimensions.",
+          "text": "\u6307\u5b9a\u3055\u308c\u305f\u8981\u7d20\u578b\u3068\u6b21\u5143\u3092\u6301\u3064\u672a\u521d\u671f\u5316\u306e\u914d\u5217\u3092\u5272\u308a\u5f53\u3066\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 13
+        }
+      ]
+    },
+    {
+      "storage": "q8_0",
+      "hybrid_prefill": true,
+      "load_seconds": 3.554971916,
+      "weight_bytes": 945881088,
+      "prefill_cache_bytes": 2239758336,
+      "other_model_bytes": 940032,
+      "model_array_bytes": 3186579456,
+      "prefill_tps": 5168.958722957058,
+      "decode_tps": 245.52896737713388,
+      "short_seconds": 0.040141417,
+      "short_text": "\u4f1a\u8b70\u306f10\u6642\u306b\u59cb\u307e\u308a\u307e\u3059\u3002",
+      "prefill_samples": [
+        4963.765481470709,
+        5253.55417304994,
+        5524.2757825503495,
+        4877.831843378002,
+        5194.761342923729,
+        5151.561971700779,
+        5168.958722957058
+      ],
+      "decode_samples": [
+        246.65518039739402,
+        248.1284158220356,
+        151.50062553187965,
+        245.52896737713388,
+        219.2771135936821,
+        230.72936617020798,
+        245.59849411590332
+      ],
+      "short_samples": [
+        0.042496875,
+        0.040977167,
+        0.040061125,
+        0.040357167,
+        0.039996,
+        0.040141417,
+        0.039979292
+      ],
+      "quality": [
+        {
+          "source": "The meeting starts at ten.",
+          "text": "\u4f1a\u8b70\u306f10\u6642\u306b\u59cb\u307e\u308a\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 7
+        },
+        {
+          "source": "Return the sum of the elements in the array.",
+          "text": "\u914d\u5217\u306e\u8981\u7d20\u306e\u5408\u8a08\u3092\u8fd4\u3057\u3066\u304f\u3060\u3055\u3044\u3002",
+          "finish": "stop",
+          "generated_tokens": 8
+        },
+        {
+          "source": "Compute the eigenvalues and eigenvectors of a real symmetric matrix.",
+          "text": "\u5b9f\u5bfe\u79f0\u884c\u5217\u306e\u56fa\u6709\u5024\u3068\u56fa\u6709\u30d9\u30af\u30c8\u30eb\u3092\u8a08\u7b97\u305b\u3088\u3002",
+          "finish": "stop",
+          "generated_tokens": 14
+        },
+        {
+          "source": "Set `check=false` to skip the validation step.",
+          "text": "\u691c\u8a3c\u30b9\u30c6\u30c3\u30d7\u3092\u30b9\u30ad\u30c3\u30d7\u3059\u308b\u306b\u306f `check=false` \u3092\u8a2d\u5b9a\u3057\u3066\u304f\u3060\u3055\u3044\u3002",
+          "finish": "stop",
+          "generated_tokens": 13
+        },
+        {
+          "source": "The function returns `nothing` when the input is empty.",
+          "text": "\u3053\u306e\u95a2\u6570\u306f\u3001\u5165\u529b\u304c\u7a7a\u306e\u5834\u5408\u306b `nothing` \u3092\u8fd4\u3057\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 15
+        },
+        {
+          "source": "A scalar is broadcast across every element of the array.",
+          "text": "\u30b9\u30ab\u30e9\u30fc\u306f\u914d\u5217\u306e\u3059\u3079\u3066\u306e\u8981\u7d20\u306b\u30d6\u30ed\u30fc\u30c9\u30ad\u30e3\u30b9\u30c8\u3055\u308c\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Throw an ArgumentError if the dimensions do not match.",
+          "text": "\u5bf8\u6cd5\u304c\u4e00\u81f4\u3057\u306a\u3044\u5834\u5408\u306f ArgumentError \u3092\u30b9\u30ed\u30fc\u3057\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Allocate an uninitialized array with the specified element type and dimensions.",
+          "text": "\u6307\u5b9a\u3055\u308c\u305f\u8981\u7d20\u578b\u3068\u6b21\u5143\u3092\u6301\u3064\u672a\u521d\u671f\u5316\u306e\u914d\u5217\u3092\u5272\u308a\u5f53\u3066\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 13
+        }
+      ]
+    },
+    {
+      "storage": "q4_0",
+      "hybrid_prefill": true,
+      "load_seconds": 3.299146375,
+      "weight_bytes": 500760576,
+      "prefill_cache_bytes": 2239758336,
+      "other_model_bytes": 940032,
+      "model_array_bytes": 2741458944,
+      "prefill_tps": 5554.169423863402,
+      "decode_tps": 403.5230513142043,
+      "short_seconds": 0.0304305,
+      "short_text": "\u4f1a\u8b70\u306f10\u6642\u306b\u59cb\u307e\u308a\u307e\u3059\u3002",
+      "prefill_samples": [
+        5465.8130262366285,
+        5639.066607597444,
+        5554.169423863402,
+        5503.975848553977,
+        5589.509399153067,
+        5442.099589232023,
+        5685.046302925561
+      ],
+      "decode_samples": [
+        405.0585893832093,
+        401.7731378560538,
+        405.6677257805846,
+        402.74105055581975,
+        405.34763480858464,
+        403.5230513142043,
+        400.0816816763352
+      ],
+      "short_samples": [
+        0.030392708,
+        0.03176275,
+        0.0304305,
+        0.030346208,
+        0.030261125,
+        0.032105542,
+        0.03087175
+      ],
+      "quality": [
+        {
+          "source": "The meeting starts at ten.",
+          "text": "\u4f1a\u8b70\u306f10\u6642\u306b\u59cb\u307e\u308a\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 7
+        },
+        {
+          "source": "Return the sum of the elements in the array.",
+          "text": "\u914d\u5217\u306e\u8981\u7d20\u306e\u5408\u8a08\u3092\u8fd4\u3057\u3066\u304f\u3060\u3055\u3044\u3002",
+          "finish": "stop",
+          "generated_tokens": 8
+        },
+        {
+          "source": "Compute the eigenvalues and eigenvectors of a real symmetric matrix.",
+          "text": "\u5b9f\u5bfe\u79f0\u884c\u5217\u306e\u56fa\u6709\u5024\u3068\u56fa\u6709\u30d9\u30af\u30c8\u30eb\u3092\u8a08\u7b97\u305b\u3088\u3002",
+          "finish": "stop",
+          "generated_tokens": 14
+        },
+        {
+          "source": "Set `check=false` to skip the validation step.",
+          "text": "`check=false` \u3092\u8a2d\u5b9a\u3057\u3066\u30d0\u30ea\u30c7\u30fc\u30b7\u30e7\u30f3\u30b9\u30c6\u30c3\u30d7\u3092\u30b9\u30ad\u30c3\u30d7\u3057\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 14
+        },
+        {
+          "source": "The function returns `nothing` when the input is empty.",
+          "text": "\u3053\u306e\u95a2\u6570\u306f\u3001\u5165\u529b\u304c\u7a7a\u306e\u5834\u5408\u306b `nothing` \u3092\u8fd4\u3057\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 15
+        },
+        {
+          "source": "A scalar is broadcast across every element of the array.",
+          "text": "\u30b9\u30ab\u30e9\u30fc\u306f\u914d\u5217\u306e\u3059\u3079\u3066\u306e\u8981\u7d20\u306b\u30d6\u30ed\u30fc\u30c9\u30ad\u30e3\u30b9\u30c8\u3055\u308c\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Throw an ArgumentError if the dimensions do not match.",
+          "text": "\u5bf8\u6cd5\u304c\u4e00\u81f4\u3057\u306a\u3044\u5834\u5408\u306f ArgumentError \u3092\u30b9\u30ed\u30fc\u3057\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Allocate an uninitialized array with the specified element type and dimensions.",
+          "text": "\u6307\u5b9a\u3055\u308c\u305f\u8981\u7d20\u578b\u3068\u5bf8\u6cd5\u3092\u6301\u3064\u672a\u521d\u671f\u5316\u306e\u914d\u5217\u3092\u5272\u308a\u5f53\u3066\u308b\u3002",
+          "finish": "stop",
+          "generated_tokens": 13
+        }
+      ]
+    },
+    {
+      "storage": "f32",
+      "hybrid_prefill": false,
+      "load_seconds": 1.732013125,
+      "weight_bytes": 3560964096,
+      "prefill_cache_bytes": 0,
+      "other_model_bytes": 940032,
+      "model_array_bytes": 3561904128,
+      "prefill_tps": 5130.731643534883,
+      "decode_tps": 91.67633208564662,
+      "short_seconds": 0.091567708,
+      "short_text": "\u4f1a\u8b70\u306f10\u6642\u306b\u59cb\u307e\u308a\u307e\u3059\u3002",
+      "prefill_samples": [
+        5279.2576769789675,
+        5297.38286524265,
+        4999.658226488424,
+        5130.731643534883,
+        5128.479222407159,
+        5251.641209677807,
+        4749.286642304805
+      ],
+      "decode_samples": [
+        93.17408814050361,
+        92.80983581934242,
+        92.1138988359106,
+        87.34234313000947,
+        91.67633208564662,
+        91.42551298394636,
+        89.92538827306196
+      ],
+      "short_samples": [
+        0.091567708,
+        0.092534917,
+        0.091134375,
+        0.093509708,
+        0.091334,
+        0.091741083,
+        0.091342125
+      ],
+      "quality": [
+        {
+          "source": "The meeting starts at ten.",
+          "text": "\u4f1a\u8b70\u306f10\u6642\u306b\u59cb\u307e\u308a\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 7
+        },
+        {
+          "source": "Return the sum of the elements in the array.",
+          "text": "\u914d\u5217\u306e\u8981\u7d20\u306e\u5408\u8a08\u3092\u8fd4\u3057\u3066\u304f\u3060\u3055\u3044\u3002",
+          "finish": "stop",
+          "generated_tokens": 8
+        },
+        {
+          "source": "Compute the eigenvalues and eigenvectors of a real symmetric matrix.",
+          "text": "\u5b9f\u5bfe\u79f0\u884c\u5217\u306e\u56fa\u6709\u5024\u3068\u56fa\u6709\u30d9\u30af\u30c8\u30eb\u3092\u8a08\u7b97\u305b\u3088\u3002",
+          "finish": "stop",
+          "generated_tokens": 14
+        },
+        {
+          "source": "Set `check=false` to skip the validation step.",
+          "text": "\u691c\u8a3c\u30b9\u30c6\u30c3\u30d7\u3092\u30b9\u30ad\u30c3\u30d7\u3059\u308b\u306b\u306f `check=false` \u3092\u8a2d\u5b9a\u3057\u3066\u304f\u3060\u3055\u3044\u3002",
+          "finish": "stop",
+          "generated_tokens": 13
+        },
+        {
+          "source": "The function returns `nothing` when the input is empty.",
+          "text": "\u3053\u306e\u95a2\u6570\u306f\u3001\u5165\u529b\u304c\u7a7a\u306e\u5834\u5408\u306b `nothing` \u3092\u8fd4\u3057\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 15
+        },
+        {
+          "source": "A scalar is broadcast across every element of the array.",
+          "text": "\u30b9\u30ab\u30e9\u30fc\u306f\u914d\u5217\u306e\u3059\u3079\u3066\u306e\u8981\u7d20\u306b\u30d6\u30ed\u30fc\u30c9\u30ad\u30e3\u30b9\u30c8\u3055\u308c\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Throw an ArgumentError if the dimensions do not match.",
+          "text": "\u5bf8\u6cd5\u304c\u4e00\u81f4\u3057\u306a\u3044\u5834\u5408\u306f ArgumentError \u3092\u30b9\u30ed\u30fc\u3057\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 11
+        },
+        {
+          "source": "Allocate an uninitialized array with the specified element type and dimensions.",
+          "text": "\u6307\u5b9a\u3055\u308c\u305f\u8981\u7d20\u578b\u3068\u6b21\u5143\u3092\u6301\u3064\u672a\u521d\u671f\u5316\u306e\u914d\u5217\u3092\u5272\u308a\u5f53\u3066\u307e\u3059\u3002",
+          "finish": "stop",
+          "generated_tokens": 13
+        }
+      ]
+    }
+  ],
+  "gpu_debug_level": 0,
+  "fastmath": false,
+  "change": "register-resident dual RMS at hidden width1536"
+}
