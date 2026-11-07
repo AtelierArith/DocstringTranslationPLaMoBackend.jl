@@ -4,6 +4,29 @@ using DocstringTranslationPLaMoBackend
 using Metal
 using LinearAlgebra
 
+
+# Apple GPU family 7 introduced native SIMD reductions. The family is a GPU
+# compile-time constant, so older targets retain only the shuffle fallback.
+# Only lane 1 is guaranteed to contain the reduction on the fallback path.
+@inline function simd_sum_f32(x::Float32)
+    if Metal.apple_family() >= 7
+        return ccall("extern air.simd_sum.f32", llvmcall, Float32, (Float32,), x)
+    end
+    for offset in (16, 8, 4, 2, 1)
+        x += simd_shuffle_down(x, offset)
+    end
+    return x
+end
+@inline function simd_max_f32(x::Float32)
+    if Metal.apple_family() >= 7
+        return ccall("extern air.simd_max.f32", llvmcall, Float32, (Float32,), x)
+    end
+    for offset in (16, 8, 4, 2, 1)
+        x = max(x, simd_shuffle_down(x, offset))
+    end
+    return x
+end
+
 const B = DocstringTranslationPLaMoBackend
 const P = B.PLaMo
 
@@ -17,9 +40,7 @@ function rms_kernel!(output, input, weight, residual, eps, width, count)
     for i = lane:32:width
         @inbounds square = muladd(input[i, token], input[i, token], square)
     end
-    for offset in (16, 8, 4, 2, 1)
-        square += simd_shuffle_down(square, offset)
-    end
+    square = simd_sum_f32(square)
     scale = inv(sqrt(simd_shuffle(square, 1) / width + eps))
     for i = lane:32:width
         @inbounds begin
@@ -69,15 +90,11 @@ function dual_rms_kernel!(
     for i = tid:256:width
         @inbounds square = muladd(input[i, token], input[i, token], square)
     end
-    for offset in (16, 8, 4, 2, 1)
-        square += simd_shuffle_down(square, offset)
-    end
+    square = simd_sum_f32(square)
     lane == 1 && (@inbounds partial[simd] = square)
     threadgroup_barrier(Metal.MemoryFlagThreadGroup)
     square = lane <= 8 ? (@inbounds partial[lane]) : 0.0f0
-    for offset in (16, 8, 4, 2, 1)
-        square += simd_shuffle_down(square, offset)
-    end
+    square = simd_sum_f32(square)
     scale = inv(sqrt(simd_shuffle(square, 1) / width + eps))
     threadgroup_barrier(Metal.MemoryFlagThreadGroup)
     square2 = 0.0f0
@@ -88,15 +105,11 @@ function dual_rms_kernel!(
             square2 = muladd(value, value, square2)
         end
     end
-    for offset in (16, 8, 4, 2, 1)
-        square2 += simd_shuffle_down(square2, offset)
-    end
+    square2 = simd_sum_f32(square2)
     lane == 1 && (@inbounds partial[simd] = square2)
     threadgroup_barrier(Metal.MemoryFlagThreadGroup)
     square2 = lane <= 8 ? (@inbounds partial[lane]) : 0.0f0
-    for offset in (16, 8, 4, 2, 1)
-        square2 += simd_shuffle_down(square2, offset)
-    end
+    square2 = simd_sum_f32(square2)
     scale2 = inv(sqrt(simd_shuffle(square2, 1) / width + eps))
     for i = tid:256:width
         @inbounds normalized[i, token] = (output[i, token] * scale2) * pre_weight[i]
@@ -133,9 +146,7 @@ function rotate_kernel!(x, norm, eps, cosines, sines, position, width, heads, co
     for i = lane:32:width
         @inbounds square = muladd(x[base+i, token], x[base+i, token], square)
     end
-    for offset in (16, 8, 4, 2, 1)
-        square += simd_shuffle_down(square, offset)
-    end
+    square = simd_sum_f32(square)
     scale = inv(sqrt(simd_shuffle(square, 1) / width + eps))
     half = width ÷ 2
     for i = lane:32:half
@@ -196,9 +207,7 @@ function rotate_qk_kernel!(
     for i = lane:32:width
         @inbounds square = muladd(qkv[base+i, token], qkv[base+i, token], square)
     end
-    for offset in (16, 8, 4, 2, 1)
-        square += simd_shuffle_down(square, offset)
-    end
+    square = simd_sum_f32(square)
     scale = inv(sqrt(simd_shuffle(square, 1) / width + eps))
     half = width ÷ 2
     for i = lane:32:half
@@ -381,9 +390,7 @@ function single_attention_kernel!(
             @inbounds dot =
                 muladd(query[head*dim+feature, 1], keys[kv*dim+feature, kp], dot)
         end
-        for offset in (16, 8, 4, 2, 1)
-            dot += simd_shuffle_down(dot, offset)
-        end
+        dot = simd_sum_f32(dot)
         if lane == 1
             @inbounds scores[key] =
                 !full && kp + window <= position + 1 ? -Inf32 : dot / sqrt(Float32(dim))
@@ -394,16 +401,12 @@ function single_attention_kernel!(
     for key = tid:128:nkeys
         @inbounds maximum_value = max(maximum_value, scores[key])
     end
-    for offset in (16, 8, 4, 2, 1)
-        maximum_value = max(maximum_value, simd_shuffle_down(maximum_value, offset))
-    end
+    maximum_value = simd_max_f32(maximum_value)
     lane == 1 && (@inbounds scratch[simd] = maximum_value)
     threadgroup_barrier(Metal.MemoryFlagThreadGroup)
     if simd == 1
         maxpart = lane <= 4 ? (@inbounds scratch[lane]) : -Inf32
-        for offset in (16, 8, 4, 2, 1)
-            maxpart = max(maxpart, simd_shuffle_down(maxpart, offset))
-        end
+        maxpart = simd_max_f32(maxpart)
         lane == 1 && (@inbounds scratch[1] = maxpart)
     end
     threadgroup_barrier(Metal.MemoryFlagThreadGroup)
@@ -418,16 +421,12 @@ function single_attention_kernel!(
             total += value
         end
     end
-    for offset in (16, 8, 4, 2, 1)
-        total += simd_shuffle_down(total, offset)
-    end
+    total = simd_sum_f32(total)
     lane == 1 && (@inbounds scratch[simd] = total)
     threadgroup_barrier(Metal.MemoryFlagThreadGroup)
     if simd == 1
         subtotal = lane <= 4 ? (@inbounds scratch[lane]) : 0.0f0
-        for offset in (16, 8, 4, 2, 1)
-            subtotal += simd_shuffle_down(subtotal, offset)
-        end
+        subtotal = simd_sum_f32(subtotal)
         lane == 1 && (@inbounds scratch[1] = subtotal)
     end
     threadgroup_barrier(Metal.MemoryFlagThreadGroup)
@@ -629,9 +628,7 @@ function masked_softmax_kernel!(
             scores[key, head, token] * scale
         maximum_value = max(maximum_value, value)
     end
-    for offset in (16, 8, 4, 2, 1)
-        maximum_value = max(maximum_value, simd_shuffle_down(maximum_value, offset))
-    end
+    maximum_value = simd_max_f32(maximum_value)
     maximum_value = simd_shuffle(maximum_value, 1)
     total = 0.0f0
     for key = lane:32:nkeys
@@ -644,9 +641,7 @@ function masked_softmax_kernel!(
             total += value
         end
     end
-    for offset in (16, 8, 4, 2, 1)
-        total += simd_shuffle_down(total, offset)
-    end
+    total = simd_sum_f32(total)
     total = simd_shuffle(total, 1)
     for key = lane:32:nkeys
         @inbounds scores[key, head, token] /= total

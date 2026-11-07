@@ -6,6 +6,33 @@ const B = DocstringTranslationPLaMoBackend
 const P = B.PLaMo
 const M = Base.get_extension(B, :DocstringTranslationPLaMoBackendMetalExt)
 
+function reduction_test_kernel!(output, input)
+    lane = Int(thread_index_in_simdgroup())
+    value = @inbounds input[lane]
+    total = M.simd_sum_f32(value)
+    largest = M.simd_max_f32(value)
+    if lane == 1
+        @inbounds output[1] = total
+        @inbounds output[2] = largest
+    end
+    return
+end
+
+@testset "Metal SIMD reductions" begin
+    for values in (Float32.(1:32), -Float32.(1:32), vcat(Float32[-Inf], -Float32.(2:32)))
+        input = MtlArray(values)
+        output = Metal.zeros(Float32, 2)
+        @metal threads=32 reduction_test_kernel!(output, input)
+        @test Array(output) ≈ Float32[sum(values), maximum(values)]
+        # Force compilation of the pre-Apple-Silicon fallback on this device.
+        @metal threads=32 gpufamily=Metal.MTL.MTLGPUFamilyApple6 reduction_test_kernel!(
+            output,
+            input,
+        )
+        @test Array(output) ≈ Float32[sum(values), maximum(values)]
+    end
+end
+
 @testset "Metal inference primitives" begin
     @test !isnothing(M)
     gib = 1024^3

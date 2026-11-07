@@ -226,12 +226,10 @@ function bf16_matvec_kernel!(output, weight, input, width, columns)
             end
         end
     end
-    for offset in (16, 8, 4, 2, 1)
-        a += simd_shuffle_down(a, offset)
-        b += simd_shuffle_down(b, offset)
-        c += simd_shuffle_down(c, offset)
-        d += simd_shuffle_down(d, offset)
-    end
+    a = simd_sum_f32(a)
+    b = simd_sum_f32(b)
+    c = simd_sum_f32(c)
+    d = simd_sum_f32(d)
     if lane == 1
         @inbounds begin
             output[base, 1] = a
@@ -277,12 +275,10 @@ function bf16_matvec_vector_kernel!(output, weight, input, width, columns)
             end
         end
     end
-    for offset in (16, 8, 4, 2, 1)
-        a += simd_shuffle_down(a, offset)
-        b += simd_shuffle_down(b, offset)
-        c += simd_shuffle_down(c, offset)
-        d += simd_shuffle_down(d, offset)
-    end
+    a = simd_sum_f32(a)
+    b = simd_sum_f32(b)
+    c = simd_sum_f32(c)
+    d = simd_sum_f32(d)
     if lane == 1
         @inbounds begin
             output[base, 1] = a
@@ -331,12 +327,10 @@ function bf16_matvec_group_kernel!(out, weight, x, width, cols)
         val3=reinterpret(Vec{4,Float32}, Vec{4,UInt32}(vload(Vec{4,UInt16}, ptr3))<<16)
         a3 += sum(val3*xv)
     end
-    for offset in (16, 8, 4, 2, 1)
-        a0+=simd_shuffle_down(a0, offset)
-        a1+=simd_shuffle_down(a1, offset)
-        a2+=simd_shuffle_down(a2, offset)
-        a3+=simd_shuffle_down(a3, offset)
-    end
+    a0 = simd_sum_f32(a0)
+    a1 = simd_sum_f32(a1)
+    a2 = simd_sum_f32(a2)
+    a3 = simd_sum_f32(a3)
     if lane==1
         @inbounds begin
             partial[(simd-1)*4+1] = a0
@@ -387,10 +381,8 @@ function bf16_packed_matvec_kernel!(out, weight, x, width, cols)
         high1=reinterpret(Vec{4,Float32}, raw1&Vec{4,UInt32}(0xffff0000))
         a1+=sum(low1*xe)+sum(high1*xo)
     end
-    for offset in (16, 8, 4, 2, 1)
-        a0+=simd_shuffle_down(a0, offset)
-        a1+=simd_shuffle_down(a1, offset)
-    end
+    a0 = simd_sum_f32(a0)
+    a1 = simd_sum_f32(a1)
     if lane==1
         @inbounds partial[(simd-1)*2+1]=a0
         @inbounds partial[(simd-1)*2+2]=a1
