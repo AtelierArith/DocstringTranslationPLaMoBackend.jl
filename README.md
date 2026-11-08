@@ -2,7 +2,7 @@
 
 Julia の docstring と Documenter ページを、同梱した **PLaMo.jl のネイティブ Julia 実装**で翻訳します。Python・Conda・`plamo-translate` CLI は不要です。
 
-PLaMo の実装は `src/PLaMo.jl` と `src/julia/` に同梱しているため、インストール時に非公開の upstream リポジトリへアクセスする必要はありません。モデルのアセットは Scratch.jl でキャッシュされ、遅延ロードされた 1 つのモデルをすべての翻訳で使い回します。
+PLaMo の実装は `src/PLaMo/` に同梱しているため、インストール時に非公開の upstream リポジトリへアクセスする必要はありません。モデルのアセットは Scratch.jl でキャッシュされ、遅延ロードされた 1 つのモデルをすべての翻訳で使い回します。
 
 ## セットアップ
 
@@ -115,7 +115,7 @@ M2 Max・Julia 1 スレッドでの最適化済み Metal デコードは、BF16 
 
 ### Q4_0 について
 
-Q4_0 は llama.cpp（GGML）で使われる 4bit のブロック量子化です。このパッケージは同じ丸め方を自前で実装しています（[`src/metal/metal_quantization.jl`](src/metal/metal_quantization.jl)）。
+Q4_0 は llama.cpp（GGML）で使われる 4bit のブロック量子化です。このパッケージは同じ丸め方を自前で実装しています（[`src/MetalBackend/quantization.jl`](src/MetalBackend/quantization.jl)）。
 
 **仕組み**
 
@@ -198,4 +198,4 @@ PLAMO_METAL_QUANT_MODEL=1 JULIA_NUM_THREADS=1 julia --project=test/metal test/me
 
 ウォーム状態の推論ベンチマーク、GPU プロファイリング、AllocCheck によるアロケーション診断、llama.cpp との比較結果については [benchmark/README.md](benchmark/README.md) を参照してください。M2 Max では、記載したウォーム状態のワークロードにおいて、Metal で `JULIA_NUM_THREADS=1` を使い、llama.cpp と同程度のスループットに達しました。
 
-ネイティブ実装のソースは、PLaMo.jl のコミット `e919a8a13e18aa997ee0d7708cd35fdb00812fdc` から無変更でコピーしています。[出自と更新手順](src/julia/UPSTREAM.md)、[ソースのチェックサム](src/julia/checksums.toml)、[upstream の MIT ライセンス](src/julia/LICENSE)を参照してください。実行時のセットアップには、登録済みの Julia パッケージと標準ライブラリだけを使います。
+ネイティブ実装のソースは、PLaMo.jl のコミット `e919a8a13e18aa997ee0d7708cd35fdb00812fdc` から `src/PLaMo/` にコピーしています（`PLaMo.jl` の `include` パスのみ本リポジトリの配置に合わせて変更）。[出自と更新手順](src/PLaMo/UPSTREAM.md)、[ソースのチェックサム](src/PLaMo/checksums.toml)、[upstream の MIT ライセンス](src/PLaMo/LICENSE)を参照してください。実行時のセットアップには、登録済みの Julia パッケージと標準ライブラリだけを使います。

@@ -16,7 +16,7 @@ const Native = B.PLaMo
     @test occursin(B.MODEL_REVISION, B.model_directory())
     @test !startswith(B.model_directory(), pkgdir(B))
     source = joinpath(pkgdir(B), "src")
-    checksums = TOML.parsefile(joinpath(source, "julia", "checksums.toml"))["sha256"]
+    checksums = TOML.parsefile(joinpath(source, "PLaMo", "checksums.toml"))["sha256"]
     @test length(checksums) >= 10
     for (file, digest) in checksums
         @test B.file_sha256(joinpath(source, file)) == digest

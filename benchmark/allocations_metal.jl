@@ -50,7 +50,7 @@ function static_report(f, args)
 end
 
 package_frame(frame) =
-    occursin("/src/metal/", string(frame.file)) &&
+    occursin("/src/MetalBackend/", string(frame.file)) &&
     occursin("DocstringTranslationPLaMoBackend", string(frame.file))
 
 function allocation_profile(model, state)

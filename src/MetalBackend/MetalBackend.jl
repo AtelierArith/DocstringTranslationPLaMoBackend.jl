@@ -898,9 +898,9 @@ function attention_gpu(
     return output
 end
 
-include("metal_quantization.jl")
-include("metal_decode.jl")
-include("metal_token.jl")
-include("metal_model.jl")
+include("quantization.jl")
+include("decode.jl")
+include("token.jl")
+include("model.jl")
 
 end
