@@ -115,7 +115,7 @@ M2 Max・Julia 1 スレッドでの最適化済み Metal デコードは、BF16 
 
 ### Q4_0 について
 
-Q4_0 は llama.cpp（GGML）で使われる 4bit のブロック量子化です。このパッケージは同じ丸め方を自前で実装しています（[`src/metal/metal_quantization.jl`](src/metal/metal_quantization.jl)）。
+Q4_0 は llama.cpp（GGML）で使われる 4bit のブロック量子化です。このパッケージは同じ丸め方を自前で実装しています（[`src/MetalBackend/metal_quantization.jl`](src/MetalBackend/metal_quantization.jl)）。
 
 **仕組み**
 

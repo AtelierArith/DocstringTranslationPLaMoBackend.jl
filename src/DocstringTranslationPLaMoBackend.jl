@@ -29,7 +29,7 @@ include("scratchspace.jl")
 include("model.jl")
 # Metal.jl only works on Apple Silicon; other platforms never load it.
 @static if Sys.isapple() && Sys.ARCH === :aarch64
-    include(joinpath("metal", "MetalBackend.jl"))
+    include(joinpath("MetalBackend", "MetalBackend.jl"))
 end
 include("translation.jl")
 
