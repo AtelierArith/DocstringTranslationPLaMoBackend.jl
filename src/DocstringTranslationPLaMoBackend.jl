@@ -8,7 +8,7 @@ using Markdown
 using Scratch
 import Documenter
 import Downloads
-include("PLaMo.jl")
+include(joinpath("PLaMo", "PLaMo.jl"))
 
 const DEFAULT_LANG = Ref("ja")
 const TRANSLATION_CACHE_DIR = Ref{String}()

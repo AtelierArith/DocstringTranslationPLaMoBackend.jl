@@ -11,14 +11,14 @@ using SIMD
 
 export Translator, TranslationRequest, TranslationPair, Translation, translate, prompt
 
-include("julia/tokenizer.jl")
-include("julia/prompt.jl")
-include("julia/weights.jl")
-include("julia/compressed_projection.jl")
-include("julia/packed_projection.jl")
-include("julia/projection.jl")
-include("julia/attention.jl")
-include("julia/model.jl")
-include("julia/translate.jl")
+include("tokenizer.jl")
+include("prompt.jl")
+include("weights.jl")
+include("compressed_projection.jl")
+include("packed_projection.jl")
+include("projection.jl")
+include("attention.jl")
+include("model.jl")
+include("translate.jl")
 
 end
